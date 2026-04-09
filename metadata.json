@@ -1,0 +1,5 @@
+{
+  "name": "Flipa ATM",
+  "description": "Localize ATMs próximos em Luanda com informações em tempo real sobre disponibilidade de dinheiro e papel.",
+  "requestFramePermissions": ["geolocation"]
+}

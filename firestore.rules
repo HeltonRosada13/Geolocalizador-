@@ -1,0 +1,128 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {uid}
+// Fields:
+//   - uid: string (required)
+//   - displayName: string (optional)
+//   - email: string (required)
+//   - photoURL: string (optional)
+//   - createdAt: timestamp (required)
+//
+// Collection: atms
+// Document ID: {atmId}
+// Fields:
+//   - bankName: string (required)
+//   - locationName: string (required)
+//   - address: string (optional)
+//   - latitude: number (required)
+//   - longitude: number (required)
+//   - status: string (required, enum: ['disponivel', 'sem_dinheiro', 'sem_papel', 'fora_de_servico'])
+//   - lastReportedAt: timestamp (required)
+//   - notes: string (optional)
+//
+// Collection: reports
+// Document ID: {reportId}
+// Fields:
+//   - atmId: string (required)
+//   - userUid: string (required)
+//   - userName: string (optional)
+//   - status: string (required, enum: ['disponivel', 'sem_dinheiro', 'sem_papel', 'fora_de_servico'])
+//   - timestamp: timestamp (required)
+//   - notes: string (optional)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "heltonlisboa937@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             isValidEmail(data.email);
+    }
+
+    function isValidATM(data) {
+      return data.keys().hasAll(['bankName', 'locationName', 'latitude', 'longitude', 'status', 'lastReportedAt']) &&
+             data.bankName is string && data.bankName.size() < 100 &&
+             data.locationName is string && data.locationName.size() < 200 &&
+             data.latitude is number && data.longitude is number &&
+             data.status in ['disponivel', 'sem_dinheiro', 'sem_papel', 'fora_de_servico'];
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['atmId', 'userUid', 'status', 'timestamp']) &&
+             data.atmId is string &&
+             data.userUid == request.auth.uid &&
+             data.status in ['disponivel', 'sem_dinheiro', 'sem_papel', 'fora_de_servico'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && 
+                      request.resource.data.email == resource.data.email;
+    }
+
+    match /atms/{atmId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidATM(request.resource.data);
+      allow update: if isAuthenticated() && isValidATM(request.resource.data);
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidReport(request.resource.data);
+      allow update: if false; // Reports are immutable
+      allow delete: if isAdmin();
+    }
+
+    match /analytics_searches/{searchId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && 
+                      request.resource.data.userUid == request.auth.uid &&
+                      request.resource.data.query is string &&
+                      request.resource.data.query.size() < 100;
+    }
+
+    match /analytics_usage/{usageId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && 
+                      request.resource.data.userUid == request.auth.uid &&
+                      request.resource.data.type in ['view_details'];
+    }
+  }
+}

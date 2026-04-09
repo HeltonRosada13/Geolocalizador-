@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Utilizadores do sistema Flipa ATM",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "ATM": {
+      "title": "ATM",
+      "description": "Caixas eletrónicos registados",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "bankName": { "type": "string" },
+        "locationName": { "type": "string" },
+        "address": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "status": { "type": "string", "enum": ["disponivel", "sem_dinheiro", "sem_papel", "fora_de_servico"] },
+        "lastReportedAt": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["bankName", "locationName", "latitude", "longitude"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Relatos de utilizadores sobre o estado de um ATM",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "atmId": { "type": "string" },
+        "userUid": { "type": "string" },
+        "userName": { "type": "string" },
+        "status": { "type": "string", "enum": ["disponivel", "sem_dinheiro", "sem_papel", "fora_de_servico"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["atmId", "userUid", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "Perfis de utilizadores"
+    },
+    "/atms/{atmId}": {
+      "schema": "ATM",
+      "description": "Lista de ATMs"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Relatos históricos"
+    }
+  }
+}
