@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc, getDoc, increment } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,11 +15,13 @@ import {
   ThumbsDown, 
   Clock, 
   Navigation,
-  User as UserIcon,
   LogOut,
   PlusCircle,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  Mail,
+  Lock,
+  User as UserIcon
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { formatDistanceToNow } from 'date-fns';
@@ -90,7 +92,7 @@ const StatusBadge = ({ status }: { status: ATM['status'] }) => {
 };
 
 export default function FlipaATM() {
-  const { user, loading: authLoading, signInWithGoogle, logout } = useAuth();
+  const { user, loading: authLoading, signInWithGoogle, signInAsGuest, logout } = useAuth();
   const [atms, setAtms] = useState<ATM[]>([]);
   const [selectedATM, setSelectedATM] = useState<ATM | null>(null);
   const [view, setView] = useState<'home' | 'details' | 'report'>('home');
@@ -100,7 +102,42 @@ export default function FlipaATM() {
   const [activeTab, setActiveTab] = useState<'map' | 'list'>('list');
   const [showAdmin, setShowAdmin] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showGuestNotice, setShowGuestNotice] = useState(false);
   const [aiInsight, setAiInsight] = useState<string>('A carregar análise inteligente...');
+  const [userReputation, setUserReputation] = useState(0);
+
+  // Helper to calculate distance in meters
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
+
+  // Fetch User Reputation
+  useEffect(() => {
+    if (user) {
+      const fetchReputation = async () => {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            setUserReputation(userDoc.data().reputation || 0);
+          }
+        } catch (error) {
+          console.error("Error fetching reputation:", error);
+        }
+      };
+      fetchReputation();
+    }
+  }, [user]);
 
   // Notifications
   useNotifications(atms, userLocation);
@@ -111,6 +148,17 @@ export default function FlipaATM() {
       const hasSeenWelcome = localStorage.getItem(`welcome_seen_${user.uid}`);
       if (!hasSeenWelcome) {
         setShowWelcome(true);
+      }
+
+      if (user.isAnonymous) {
+        setShowGuestNotice(true);
+        
+        // Mostrar a notificação a cada 2 minutos
+        const interval = setInterval(() => {
+          setShowGuestNotice(true);
+        }, 120000); // 120,000 ms = 2 minutos
+
+        return () => clearInterval(interval);
       }
     }
   }, [user]);
@@ -133,7 +181,7 @@ export default function FlipaATM() {
           locationName: selectedATM.locationName,
           timestamp: serverTimestamp(),
           type: 'view_details'
-        }).catch(e => console.error("Analytics error:", e));
+        }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'analytics_usage'));
       }
       
       const generateInsight = async (atm: ATM) => {
@@ -181,7 +229,7 @@ export default function FlipaATM() {
           query: searchQuery.trim().toLowerCase(),
           userUid: user.uid,
           timestamp: serverTimestamp()
-        }).catch(e => console.error("Search analytics error:", e));
+        }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'analytics_searches'));
       }
     }, 2000);
 
@@ -193,7 +241,7 @@ export default function FlipaATM() {
     if (user) {
       updateDoc(doc(db, 'users', user.uid), {
         lastActiveAt: serverTimestamp()
-      }).catch(e => console.error("User activity error:", e));
+      }).catch(e => handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}`));
     }
   }, [user, view, activeTab]);
 
@@ -228,6 +276,19 @@ export default function FlipaATM() {
 
   const handleReport = async (status: ATM['status']) => {
     if (!selectedATM || !user) return;
+
+    // Proximity Check: 30 meters
+    if (userLocation) {
+      const distance = getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude);
+      if (distance > 30) {
+        alert(`Estás a ${Math.round(distance)}m deste ATM. Precisas de estar a menos de 30m para relatar.`);
+        return;
+      }
+    } else {
+      alert("Não conseguimos determinar a tua localização. Ativa o GPS para relatar.");
+      return;
+    }
+
     setIsReporting(true);
 
     try {
@@ -246,6 +307,12 @@ export default function FlipaATM() {
         lastReportedAt: serverTimestamp(),
       });
 
+      // 3. Increment User Reputation (Unlock more ATMs)
+      await updateDoc(doc(db, 'users', user.uid), {
+        reputation: increment(1)
+      });
+      setUserReputation(prev => prev + 1);
+
       setSelectedATM(prev => prev ? { ...prev, status, lastReportedAt: new Date() } : null);
       setView('details');
     } catch (error) {
@@ -255,10 +322,18 @@ export default function FlipaATM() {
     }
   };
 
-  const filteredATMs = atms.filter(atm => 
-    atm.bankName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    atm.locationName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredATMs = atms
+    .filter(atm => 
+      atm.bankName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      atm.locationName.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      if (!userLocation) return 0;
+      const distA = getDistance(userLocation[0], userLocation[1], a.latitude, a.longitude);
+      const distB = getDistance(userLocation[0], userLocation[1], b.latitude, b.longitude);
+      return distA - distB;
+    })
+    .slice(0, 5 + userReputation); // Unlock logic: start with 5, add 1 for each reputation point
 
   if (authLoading) {
     return (
@@ -275,31 +350,81 @@ export default function FlipaATM() {
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8F9FB] p-6">
-        <MulticaixaLogo size="lg" className="mb-8" />
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Flipa ATM</h1>
-        <p className="text-gray-500 text-center mb-12 max-w-xs">
-          A sua experiência premium para localizar ATMs em Luanda.
-        </p>
-        <button
-          onClick={signInWithGoogle}
-          className="w-full max-w-xs flex items-center justify-center gap-3 bg-white border border-gray-200 text-gray-700 px-6 py-4 rounded-2xl font-semibold shadow-sm hover:bg-gray-50 transition-all active:scale-95"
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-blue-100/50 border border-gray-100 text-center"
         >
-          <Image 
-            src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
-            alt="Google" 
-            width={20} 
-            height={20} 
-            className="w-5 h-5" 
-            referrerPolicy="no-referrer"
-          />
-          Entrar com Google
-        </button>
+          <div className="flex justify-center mb-8">
+            <MulticaixaLogo size="lg" />
+          </div>
+          
+          <h1 className="text-4xl font-black text-[#002244] mb-3 tracking-tight">Flipa ATM</h1>
+          <p className="text-gray-500 mb-10 text-lg">
+            A sua rede inteligente de caixas automáticos em Angola.
+          </p>
+
+          <div className="flex flex-col items-center space-y-3">
+            <button
+              onClick={signInAsGuest}
+              className="w-[200px] h-[60px] bg-[#002244] text-white rounded-2xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-900 transition-all active:scale-[0.98]"
+            >
+              Entrar
+            </button>
+
+            <button
+              onClick={signInWithGoogle}
+              className="w-[200px] h-[60px] flex items-center justify-center gap-3 bg-white border-2 border-gray-100 text-gray-700 rounded-2xl font-bold shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all active:scale-95"
+            >
+              <Image 
+                src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
+                alt="Google" 
+                width={20} 
+                height={20} 
+                className="w-5 h-5" 
+                referrerPolicy="no-referrer"
+              />
+              Google
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 mt-6 px-4">
+            Ao entrar, você concorda com os nossos Termos de Serviço e Política de Privacidade.
+          </p>
+        </motion.div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] pb-24 font-sans text-gray-900">
+      <AnimatePresence>
+        {showGuestNotice && (
+          <motion.div
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-6 py-4 text-sm font-medium flex items-center justify-between shadow-lg sticky top-0 z-50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-1.5 rounded-lg">
+                <Sparkles className="w-4 h-4 text-blue-100" />
+              </div>
+              <p className="leading-tight">
+                <span className="font-bold block">Modo Visitante</span>
+                <span className="text-blue-100 text-xs">Cadastre-se para uma melhor experiência e salvar os seus favoritos!</span>
+              </p>
+            </div>
+            <button 
+              onClick={() => setShowGuestNotice(false)}
+              className="p-2 hover:bg-white/10 rounded-xl transition-all active:scale-90"
+            >
+              <AlertCircle className="w-5 h-5 opacity-80" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="bg-white px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm border-b border-gray-100">
         <div className="flex items-center gap-3">
@@ -332,7 +457,7 @@ export default function FlipaATM() {
         </div>
       </header>
 
-      <main className="p-6 max-w-2xl mx-auto">
+      <main className="p-4 max-w-md mx-auto">
         <AnimatePresence mode="wait">
           {view === 'home' && (
             <motion.div
@@ -340,7 +465,7 @@ export default function FlipaATM() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
+              className="space-y-6"
             >
               {/* Search Bar */}
               <div className="relative">
@@ -356,48 +481,48 @@ export default function FlipaATM() {
 
               {/* Quick Filters */}
               <div className="grid grid-cols-3 gap-2">
-                <button className="flex flex-col items-center justify-center gap-1.5 p-2 bg-green-50 rounded-xl border border-green-100 group hover:bg-green-100 transition-all">
-                  <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-green-100 group-hover:scale-110 transition-transform overflow-hidden">
-                    <MulticaixaLogo size="sm" className="scale-75" />
+                <button className="flex flex-col items-center justify-center gap-1 p-1.5 bg-green-50 rounded-xl border border-green-100 group hover:bg-green-100 transition-all">
+                  <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-green-100 group-hover:scale-110 transition-transform overflow-hidden">
+                    <MulticaixaLogo size="sm" className="scale-50" />
                   </div>
-                  <span className="text-[8px] font-bold text-green-800 text-center leading-tight">COM DINHEIRO</span>
+                  <span className="text-[7px] font-bold text-green-800 text-center leading-tight">COM DINHEIRO</span>
                 </button>
-                <button className="flex flex-col items-center justify-center gap-1.5 p-2 bg-blue-50 rounded-xl border border-blue-100 group hover:bg-blue-100 transition-all">
-                  <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-100 group-hover:scale-110 transition-transform">
-                    <FileText className="w-4 h-4" />
+                <button className="flex flex-col items-center justify-center gap-1 p-1.5 bg-blue-50 rounded-xl border border-blue-100 group hover:bg-blue-100 transition-all">
+                  <div className="w-7 h-7 bg-blue-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-100 group-hover:scale-110 transition-transform">
+                    <FileText className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[8px] font-bold text-blue-800 text-center leading-tight">COM PAPEL</span>
+                  <span className="text-[7px] font-bold text-blue-800 text-center leading-tight">COM PAPEL</span>
                 </button>
-                <button className="flex flex-col items-center justify-center gap-1.5 p-2 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-gray-100 transition-all">
-                  <div className="w-8 h-8 bg-gray-700 rounded-lg flex items-center justify-center text-white shadow-lg shadow-gray-100 group-hover:scale-110 transition-transform">
-                    <Navigation className="w-4 h-4" />
+                <button className="flex flex-col items-center justify-center gap-1 p-1.5 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-gray-100 transition-all">
+                  <div className="w-7 h-7 bg-gray-700 rounded-lg flex items-center justify-center text-white shadow-lg shadow-gray-100 group-hover:scale-110 transition-transform">
+                    <Navigation className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[8px] font-bold text-gray-800 text-center leading-tight">TODOS PRÓXIMOS</span>
+                  <span className="text-[7px] font-bold text-gray-800 text-center leading-tight">TODOS PRÓXIMOS</span>
                 </button>
               </div>
 
               {/* ATM List */}
               <section>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">ATMs Próximos</h2>
-                  <button className="text-xs font-bold text-blue-600 uppercase">Ver Todos</button>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ATMs Próximos</h2>
+                  <button className="text-[10px] font-bold text-blue-600 uppercase">Ver Todos</button>
                 </div>
-                <div className="space-y-4">
+                <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
                   {filteredATMs.length > 0 ? (
                     filteredATMs.map((atm) => (
                       <motion.div
                         key={atm.id}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
                         onClick={() => { setSelectedATM(atm); setView('details'); }}
-                        className="bg-white p-4 rounded-2xl shadow-sm border border-gray-50 flex items-center gap-4 cursor-pointer"
+                        className="bg-white p-3 rounded-xl shadow-sm border border-gray-50 flex items-center gap-3 cursor-pointer"
                       >
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-blue-900 font-bold text-[10px]">
+                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-blue-900 font-bold text-[9px]">
                           {atm.bankName.substring(0, 3).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-sm text-gray-900 truncate">{atm.bankName} {atm.locationName}</h3>
-                          <p className="text-[10px] text-gray-400 truncate">{atm.address || 'Localização central'}</p>
+                          <h3 className="font-bold text-xs text-gray-900 truncate">{atm.bankName} {atm.locationName}</h3>
+                          <p className="text-[9px] text-gray-400 truncate">{atm.address || 'Localização central'}</p>
                         </div>
                         <StatusBadge status={atm.status} />
                       </motion.div>
@@ -412,7 +537,7 @@ export default function FlipaATM() {
               </section>
 
               {/* Map Preview or Real Map */}
-              {activeTab === 'list' ? (
+              {!showWelcome && !showAdmin && (activeTab === 'list' ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Mapa Interativo</h2>
@@ -429,6 +554,8 @@ export default function FlipaATM() {
                       atms={filteredATMs} 
                       onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
                       userLocation={userLocation}
+                      selectedATM={selectedATM}
+                      showRoute={user && !user.isAnonymous}
                     />
                     <div className="absolute top-4 right-4 z-[400]">
                       <div className="bg-white/90 backdrop-blur p-2 rounded-xl shadow-lg border border-blue-100">
@@ -448,13 +575,17 @@ export default function FlipaATM() {
                       Voltar para Lista
                     </button>
                   </div>
-                  <MapView 
-                    atms={filteredATMs} 
-                    onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
-                    userLocation={userLocation}
-                  />
+                  {!showAdmin && (
+                    <MapView 
+                      atms={filteredATMs} 
+                      onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
+                      userLocation={userLocation}
+                      selectedATM={selectedATM}
+                      showRoute={user && !user.isAnonymous}
+                    />
+                  )}
                 </div>
-              )}
+              ))}
 
               {/* Seed Button (Temporary for testing) */}
               {user.email === 'heltonlisboa937@gmail.com' && atms.length === 0 && (
@@ -500,23 +631,20 @@ export default function FlipaATM() {
                 </div>
 
                 <div 
-                  style={{ width: '264px', height: '208px', paddingTop: '15px', paddingLeft: '29px', paddingRight: '23px', paddingBottom: '11px', marginBottom: '14px' }}
-                  className={`rounded-2xl flex flex-col items-center justify-center border-2 transition-all duration-500 shadow-lg mx-auto ${
+                  className={`rounded-2xl flex flex-col items-center justify-center border-2 transition-all duration-500 shadow-lg mx-auto w-full max-w-[260px] aspect-[4/3] p-4 ${
                   selectedATM.status === 'disponivel' ? 'bg-green-50/50 border-green-200 shadow-green-100/50' :
                   selectedATM.status === 'sem_papel' ? 'bg-orange-50/50 border-orange-200 shadow-orange-100/50' :
                   'bg-gray-50/50 border-gray-200 shadow-gray-100/50'
                 }`}>
                   <div 
-                    style={{ width: '80px', height: '80px' }}
-                    className={`rounded-full flex items-center justify-center shadow-2xl animate-pulse ${
+                    className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl animate-pulse ${
                     selectedATM.status === 'disponivel' ? 'bg-green-500' :
                     selectedATM.status === 'sem_papel' ? 'bg-orange-500' :
                     'bg-gray-500'
                   }`} />
                   
                   <div 
-                    style={{ height: '28px', marginTop: '20px' }}
-                    className={`flex items-center justify-center gap-2 text-[10px] font-medium leading-[14px] ${
+                    className={`flex items-center justify-center gap-2 text-[10px] font-medium mt-4 ${
                     selectedATM.status === 'disponivel' ? 'text-green-600/70' :
                     selectedATM.status === 'sem_papel' ? 'text-orange-600/70' :
                     'text-gray-600/70'
@@ -570,11 +698,20 @@ export default function FlipaATM() {
                 </div>
 
                 <div className="space-y-3 relative z-10 flex flex-col items-center">
+                  {userLocation && selectedATM && getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude) > 30 && (
+                    <div className="w-full bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center gap-3 text-amber-800 mb-2">
+                      <Lock className="w-5 h-5 flex-shrink-0" />
+                      <p className="text-[10px] font-medium leading-tight text-center">
+                        Opção Bloqueada. Precisas de estar a menos de 30 metros deste ATM para ajudar a comunidade. 
+                        Estás a {Math.round(getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude))}m.
+                      </p>
+                    </div>
+                  )}
                   <button 
-                    disabled={isReporting}
+                    disabled={isReporting || !!(userLocation && selectedATM && getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude) > 30)}
                     onClick={() => handleReport('disponivel')}
                     style={{ height: '57px', width: '254px' }}
-                    className="bg-green-600 text-white p-4 rounded-2xl font-black flex items-center justify-between hover:bg-green-700 transition-all active:scale-[0.98] disabled:opacity-50 shadow-lg shadow-green-200 group"
+                    className="bg-green-600 text-white p-4 rounded-2xl font-black flex items-center justify-between hover:bg-green-700 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale shadow-lg shadow-green-200 group"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
@@ -588,10 +725,10 @@ export default function FlipaATM() {
                     <ChevronRight className="w-5 h-5 opacity-50" />
                   </button>
                   <button 
-                    disabled={isReporting}
+                    disabled={isReporting || !!(userLocation && selectedATM && getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude) > 30)}
                     onClick={() => handleReport('sem_dinheiro')}
                     style={{ height: '61px', width: '252px' }}
-                    className="bg-gray-600 text-white p-4 rounded-2xl font-black flex items-center justify-between hover:bg-gray-700 transition-all active:scale-[0.98] disabled:opacity-50 shadow-lg shadow-gray-200 group"
+                    className="bg-gray-600 text-white p-4 rounded-2xl font-black flex items-center justify-between hover:bg-gray-700 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale shadow-lg shadow-gray-200 group"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
@@ -618,7 +755,9 @@ export default function FlipaATM() {
                     height="h-64"
                     atms={[selectedATM]} 
                     onSelectATM={() => {}}
-                    userLocation={[selectedATM.latitude, selectedATM.longitude]}
+                    userLocation={userLocation}
+                    selectedATM={selectedATM}
+                    showRoute={user && !user.isAnonymous}
                   />
                   <div className="absolute top-4 right-4 z-[400]">
                     <button 

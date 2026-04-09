@@ -1,7 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  User, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut,
+  signInAnonymously
+} from 'firebase/auth';
 import { auth, db, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -9,6 +16,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,10 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               email: user.email,
               photoURL: user.photoURL,
               createdAt: serverTimestamp(),
+              reputation: 0,
             });
           }
         } catch (error) {
-          console.error('Error syncing user:', error);
+          handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
         }
         setUser(user);
       } else {
@@ -53,6 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error('Login error:', error);
+      throw error;
+    }
+  };
+
+  const signInAsGuest = async () => {
+    try {
+      await signInAnonymously(auth);
+    } catch (error) {
+      console.error('Guest login error:', error);
+      throw error;
     }
   };
 
@@ -65,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInAsGuest, logout }}>
       {children}
     </AuthContext.Provider>
   );

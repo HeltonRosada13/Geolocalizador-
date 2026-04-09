@@ -66,9 +66,10 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email']) &&
+      return data.keys().hasAll(['uid']) &&
              data.uid is string && data.uid.size() > 0 &&
-             isValidEmail(data.email);
+             (!('email' in data) || data.email == null || isValidEmail(data.email)) &&
+             (!('reputation' in data) || data.reputation is number);
     }
 
     function isValidATM(data) {
@@ -91,16 +92,19 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && 
-                      request.resource.data.email == resource.data.email;
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      (request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastActiveAt', 'reputation']) ||
+                       request.resource.data.email == resource.data.email);
     }
 
     match /atms/{atmId} {
       allow read: if isAuthenticated();
       allow create: if isAdmin() && isValidATM(request.resource.data);
-      allow update: if isAuthenticated() && isValidATM(request.resource.data);
+      allow update: if isAuthenticated() && isValidATM(request.resource.data) &&
+                      (isAdmin() || 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'lastReportedAt']));
     }
 
     match /reports/{reportId} {

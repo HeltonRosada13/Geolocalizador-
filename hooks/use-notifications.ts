@@ -67,16 +67,25 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
     atms.forEach(atm => {
       const distance = getDistance(userLocation[0], userLocation[1], atm.latitude, atm.longitude);
       
-      // If within 100 meters and haven't notified for this ATM in this session
-      if (distance < 100 && !notifiedAtmsRef.current.has(atm.id)) {
+      // If within 30 meters and haven't notified for this ATM in this session
+      if (distance < 30 && !notifiedAtmsRef.current.has(atm.id)) {
         sendNotification(
-          'ATM Próximo! 📍',
-          `Estás ao lado do ${atm.bankName} (${atm.locationName}). Aproveita para relatar se tem dinheiro!`
+          `ATM Próximo: ${atm.bankName} 📍`,
+          `Estás mesmo ao lado do ${atm.locationName}. Ajuda a relatar se este ATM tem dinheiro ou não!`
         );
+        
+        // Play notification sound
+        try {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.play().catch(e => console.log('Audio play blocked by browser policy'));
+        } catch (e) {
+          console.error('Error playing sound:', e);
+        }
+
         notifiedAtmsRef.current.add(atm.id);
       } 
-      // Reset notification if user moves away (optional, to allow re-notifying later)
-      else if (distance > 500 && notifiedAtmsRef.current.has(atm.id)) {
+      // Reset notification if user moves away
+      else if (distance > 100 && notifiedAtmsRef.current.has(atm.id)) {
         notifiedAtmsRef.current.delete(atm.id);
       }
     });

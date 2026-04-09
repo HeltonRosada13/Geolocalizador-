@@ -1,10 +1,11 @@
 'use client';
 
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ATM } from '@/app/page';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Clock, Navigation } from 'lucide-react';
 
 // Fix for default marker icons in Leaflet with Next.js
 const DefaultIcon = L.icon({
@@ -49,10 +50,63 @@ interface MapViewProps {
   atms: ATM[];
   onSelectATM: (atm: ATM) => void;
   userLocation: [number, number] | null;
+  selectedATM?: ATM | null;
+  showRoute?: boolean;
   height?: string;
 }
 
-export default function MapView({ atms, onSelectATM, userLocation, height = "h-[calc(100vh-250px)]" }: MapViewProps) {
+function RoutingLayer({ userLocation, destination }: { userLocation: [number, number], destination: ATM }) {
+  const [route, setRoute] = useState<[number, number][]>([]);
+  const [eta, setEta] = useState<number | null>(null);
+  const map = useMap();
+
+  useEffect(() => {
+    const fetchRoute = async () => {
+      try {
+        const response = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${userLocation[1]},${userLocation[0]};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`
+        );
+        const data = await response.json();
+        if (data.routes && data.routes.length > 0) {
+          const coordinates = data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
+          setRoute(coordinates);
+          setEta(Math.round(data.routes[0].duration / 60));
+          
+          // Fit bounds to show the whole route
+          const bounds = L.latLngBounds(coordinates);
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      } catch (error) {
+        console.error("Error fetching route:", error);
+      }
+    };
+
+    fetchRoute();
+  }, [userLocation, destination, map]);
+
+  if (route.length === 0) return null;
+
+  return (
+    <>
+      <Polyline positions={route} color="#3b82f6" weight={5} opacity={0.7} dashArray="10, 10" />
+      {eta !== null && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+          <div className="bg-white/90 backdrop-blur-lg px-4 py-2 rounded-2xl shadow-xl border border-blue-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="bg-blue-100 p-1.5 rounded-lg">
+              <Clock className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none">Tempo Estimado</span>
+              <span className="text-sm font-black text-gray-900">{eta} min para chegar</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function MapView({ atms, onSelectATM, userLocation, selectedATM, showRoute, height = "h-[calc(100vh-250px)]" }: MapViewProps) {
   const defaultCenter: [number, number] = [-8.8383, 13.2344]; // Luanda
   const center = userLocation || defaultCenter;
 
@@ -76,6 +130,10 @@ export default function MapView({ atms, onSelectATM, userLocation, height = "h-[
         />
         
         <ChangeView center={center} />
+
+        {userLocation && selectedATM && showRoute && (
+          <RoutingLayer userLocation={userLocation} destination={selectedATM} />
+        )}
 
         {userLocation && (
           <Marker position={userLocation} icon={L.divIcon({

@@ -11,7 +11,6 @@ import {
   Trash2, 
   Edit2, 
   BarChart3, 
-  MapPin, 
   Database, 
   Users, 
   Activity,
@@ -262,7 +261,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-blue-600" />
+              <Database className="w-5 h-5 text-blue-600" />
               Gestão de ATMs
             </h3>
             <button 
