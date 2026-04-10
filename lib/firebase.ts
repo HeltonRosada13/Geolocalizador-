@@ -3,16 +3,23 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
-// Use environment variables if available (for external hosting), otherwise fallback to applet config
+// Use the applet config directly as it is managed by the set_up_firebase tool
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || firebaseAppletConfig.apiKey,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || firebaseAppletConfig.appId,
-  firestoreDatabaseId: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId,
+  apiKey: firebaseAppletConfig.apiKey,
+  authDomain: firebaseAppletConfig.authDomain,
+  projectId: firebaseAppletConfig.projectId,
+  storageBucket: firebaseAppletConfig.storageBucket,
+  messagingSenderId: firebaseAppletConfig.messagingSenderId,
+  appId: firebaseAppletConfig.appId,
+  firestoreDatabaseId: firebaseAppletConfig.firestoreDatabaseId,
 };
+
+// Safety check for API key
+if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes('TODO')) {
+  console.error("CRITICAL: Firebase API Key is missing or invalid. Please check firebase-applet-config.json");
+} else {
+  console.log(`[Firebase] Initializing with Project: ${firebaseConfig.projectId}, Key: ${firebaseConfig.apiKey.substring(0, 5)}...`);
+}
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
