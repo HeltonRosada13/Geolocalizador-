@@ -118,31 +118,38 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const dataToSave = {
+        ...formData,
+        lastReportedAt: new Date()
+      };
+
       if (editingAtm) {
-        await updateDoc(doc(db, 'atms', editingAtm.id), {
-          ...formData,
-          lastReportedAt: new Date()
-        });
+        await updateDoc(doc(db, 'atms', editingAtm.id), dataToSave);
+        console.log("ATM updated successfully:", editingAtm.id);
       } else {
-        await addDoc(collection(db, 'atms'), {
-          ...formData,
-          lastReportedAt: new Date()
-        });
+        const docRef = await addDoc(collection(db, 'atms'), dataToSave);
+        console.log("ATM added successfully with ID:", docRef.id);
       }
+      
       setIsAdding(false);
       setEditingAtm(null);
       setFormData({ bankName: '', locationName: '', address: '', latitude: -8.8383, longitude: 13.2344, status: 'disponivel' });
+      alert(editingAtm ? 'ATM atualizado com sucesso!' : 'Novo ATM adicionado com sucesso!');
     } catch (error) {
+      console.error("Error saving ATM:", error);
       handleFirestoreError(error, OperationType.WRITE, 'atms');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Tem certeza que deseja eliminar este ATM?')) {
+    if (window.confirm('Tem certeza que deseja eliminar este ATM? Esta ação é irreversível.')) {
       try {
         await deleteDoc(doc(db, 'atms', id));
+        console.log("ATM deleted successfully:", id);
+        alert('ATM eliminado com sucesso!');
       } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, 'atms');
+        console.error("Error deleting ATM:", error);
+        handleFirestoreError(error, OperationType.DELETE, `atms/${id}`);
       }
     }
   };

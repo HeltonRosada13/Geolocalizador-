@@ -247,17 +247,31 @@ export default function FlipaATM() {
     }
   }, [user, view, activeTab]);
 
-  // Geolocation
+  // Geolocation with real-time tracking
   useEffect(() => {
     if ("geolocation" in navigator) {
+      // Get initial position
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setUserLocation([position.coords.latitude, position.coords.longitude]);
         },
         (error) => {
-          console.error("Error getting location:", error);
+          console.error("Error getting initial location:", error);
         }
       );
+
+      // Watch for changes
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setUserLocation([position.coords.latitude, position.coords.longitude]);
+        },
+        (error) => {
+          console.error("Error watching location:", error);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+
+      return () => navigator.geolocation.clearWatch(watchId);
     }
   }, []);
 
@@ -334,8 +348,7 @@ export default function FlipaATM() {
       const distA = getDistance(userLocation[0], userLocation[1], a.latitude, a.longitude);
       const distB = getDistance(userLocation[0], userLocation[1], b.latitude, b.longitude);
       return distA - distB;
-    })
-    .slice(0, 5 + userReputation); // Unlock logic: start with 5, add 1 for each reputation point
+    });
 
   if (authLoading) {
     return (
@@ -495,7 +508,14 @@ export default function FlipaATM() {
                   </div>
                   <span className="text-[7px] font-bold text-blue-800 text-center leading-tight">COM PAPEL</span>
                 </button>
-                <button className="flex flex-col items-center justify-center gap-1 p-1.5 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-gray-100 transition-all">
+                <button 
+                  onClick={() => {
+                    setSearchQuery('');
+                    const listElement = document.getElementById('atm-list-section');
+                    if (listElement) listElement.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="flex flex-col items-center justify-center gap-1 p-1.5 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-gray-100 transition-all"
+                >
                   <div className="w-7 h-7 bg-gray-700 rounded-lg flex items-center justify-center text-white shadow-lg shadow-gray-100 group-hover:scale-110 transition-transform">
                     <Navigation className="w-3.5 h-3.5" />
                   </div>
@@ -504,31 +524,46 @@ export default function FlipaATM() {
               </div>
 
               {/* ATM List */}
-              <section>
+              <section id="atm-list-section">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ATMs Próximos</h2>
                   <button className="text-[10px] font-bold text-blue-600 uppercase">Ver Todos</button>
                 </div>
                 <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
                   {filteredATMs.length > 0 ? (
-                    filteredATMs.map((atm) => (
-                      <motion.div
-                        key={atm.id}
-                        whileHover={{ scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => { setSelectedATM(atm); setView('details'); }}
-                        className="bg-white p-3 rounded-xl shadow-sm border border-gray-50 flex items-center gap-3 cursor-pointer"
-                      >
-                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-blue-900 font-bold text-[9px]">
-                          {atm.bankName.substring(0, 3).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-xs text-gray-900 truncate">{atm.bankName} {atm.locationName}</h3>
-                          <p className="text-[9px] text-gray-400 truncate">{atm.address || 'Localização central'}</p>
-                        </div>
-                        <StatusBadge status={atm.status} />
-                      </motion.div>
-                    ))
+                    filteredATMs.map((atm) => {
+                      const distance = userLocation 
+                        ? getDistance(userLocation[0], userLocation[1], atm.latitude, atm.longitude)
+                        : null;
+                      
+                      return (
+                        <motion.div
+                          key={atm.id}
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          onClick={() => { setSelectedATM(atm); setView('details'); }}
+                          className="bg-white p-3 rounded-xl shadow-sm border border-gray-50 flex items-center gap-3 cursor-pointer"
+                        >
+                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-blue-900 font-bold text-[9px]">
+                            {atm.bankName.substring(0, 3).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <h3 className="font-bold text-xs text-gray-900 truncate">{atm.bankName} {atm.locationName}</h3>
+                              {distance !== null && (
+                                <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                                  {distance < 1000 
+                                    ? `${Math.round(distance)}m` 
+                                    : `${(distance / 1000).toFixed(1)}km`}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[9px] text-gray-400 truncate">{atm.address || 'Localização central'}</p>
+                          </div>
+                          <StatusBadge status={atm.status} />
+                        </motion.div>
+                      );
+                    })
                   ) : (
                     <div className="text-center py-12 text-gray-400">
                       <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-20" />
