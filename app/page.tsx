@@ -21,6 +21,7 @@ import {
   Sparkles,
   Mail,
   Lock,
+  Bell,
   User as UserIcon
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
@@ -142,7 +143,7 @@ export default function FlipaATM() {
   }, [user]);
 
   // Notifications
-  useNotifications(atms, userLocation);
+  const { showPermissionPrompt, requestPermission, setShowPermissionPrompt } = useNotifications(atms, userLocation);
 
   // AI Insight Generation
   useEffect(() => {
@@ -414,6 +415,44 @@ export default function FlipaATM() {
   return (
     <div className="min-h-screen bg-[#F8F9FB] pb-24 font-sans text-gray-900">
       <AnimatePresence>
+        {showPermissionPrompt && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-24 left-4 right-4 z-[100] bg-white rounded-3xl shadow-2xl border border-blue-100 p-6 flex flex-col gap-4"
+          >
+            <div className="flex items-start gap-4">
+              <div className="bg-blue-100 p-3 rounded-2xl">
+                <Bell className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-gray-900">Ativar Notificações? 🔔</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Concorda receber notificações do <span className="font-bold text-blue-900">FLIPA ATM</span> sobre atualizações em tempo real nos caixas de Luanda?
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => {
+                  localStorage.setItem('flipa_notifications_asked', 'true');
+                  setShowPermissionPrompt(false);
+                }}
+                className="flex-1 py-3 text-sm font-bold text-gray-400 hover:bg-gray-50 rounded-xl transition-colors"
+              >
+                Agora não
+              </button>
+              <button 
+                onClick={requestPermission}
+                className="flex-1 py-3 bg-blue-900 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-800 transition-all active:scale-95"
+              >
+                Sim, concordo
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {showGuestNotice && (
           <motion.div
             initial={{ y: -50, opacity: 0 }}
