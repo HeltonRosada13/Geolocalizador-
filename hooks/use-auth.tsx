@@ -60,8 +60,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert('Erro: Este domínio não está autorizado no Firebase. Adicione "geolocalizador-phi.vercel.app" aos domínios autorizados na Consola do Firebase.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        // Do nothing, user just closed the popup
+      } else {
+        alert('Erro ao entrar com o Google: ' + (error.message || 'Erro desconhecido'));
+      }
       throw error;
     }
   };
