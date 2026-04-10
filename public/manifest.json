@@ -1,0 +1,17 @@
+{
+  "name": "Flipa ATM",
+  "short_name": "Flipa ATM",
+  "description": "Localize ATMs próximos em Luanda com informações em tempo real.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8F9FB",
+  "theme_color": "#002244",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

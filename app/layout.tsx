@@ -27,6 +27,16 @@ export const metadata: Metadata = {
   verification: {
     google: 'A5fyy81eHYTBWSGrw_9inG-Kao0zLUdXq9nykP8bgxI',
   },
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/icon.svg',
+    apple: '/icon.svg',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Flipa ATM',
+  },
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
