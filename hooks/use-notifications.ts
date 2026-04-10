@@ -44,7 +44,7 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
     }
   };
 
-  const sendNotification = async (title: string, body: string) => {
+  const sendNotification = async (title: string, body: string, tag?: string, url?: string) => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       if ('serviceWorker' in navigator) {
         try {
@@ -54,8 +54,15 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
             icon: '/favicon.ico',
             badge: '/favicon.ico',
             vibrate: [200, 100, 200],
-            tag: 'flipa-atm-update',
-            renotify: true
+            tag: tag || 'flipa-general',
+            renotify: true,
+            data: {
+              url: url || window.location.origin
+            },
+            actions: [
+              { action: 'open', title: 'Ver Detalhes 🔍' },
+              { action: 'close', title: 'Ignorar' }
+            ]
           });
         } catch (e) {
           new Notification(title, { body, icon: '/favicon.ico' });
@@ -86,15 +93,26 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
         const prevAtm = prevAtmsRef.current.find(a => a.id === atm.id);
         if (prevAtm && prevAtm.status !== atm.status) {
           const statusNames = {
-            disponivel: 'com Dinheiro 💰',
-            sem_dinheiro: 'sem Dinheiro ❌',
-            sem_papel: 'apenas com Papel 📄',
-            fora_de_servico: 'fora de serviço ⚠️'
+            disponivel: 'já tem DINHEIRO disponível 💰',
+            sem_dinheiro: 'ficou SEM DINHEIRO ❌',
+            sem_papel: 'está APENAS COM PAPEL 📄',
+            fora_de_servico: 'entrou em MANUTENÇÃO ⚠️'
           };
 
+          const statusEmoji = atm.status === 'disponivel' ? '✅' : '📢';
+
+          if (atm.status === 'disponivel') {
+            try {
+              const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3');
+              audio.play().catch(e => console.log('Audio play blocked'));
+            } catch (e) {}
+          }
+
           sendNotification(
-            'ATM Atualizado! 🔄',
-            `O ATM ${atm.bankName} (${atm.locationName}) está agora ${statusNames[atm.status]}.`
+            `${statusEmoji} Atualização: ${atm.bankName}`,
+            `O caixa no ${atm.locationName} ${statusNames[atm.status]}. Verifique antes de se deslocar!`,
+            `status-${atm.id}`,
+            window.location.origin
           );
         }
       });
@@ -109,10 +127,14 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
     atms.forEach(atm => {
       const distance = getDistance(userLocation[0], userLocation[1], atm.latitude, atm.longitude);
       
-      if (distance < 30 && !notifiedAtmsRef.current.has(atm.id)) {
+      if (distance < 50 && !notifiedAtmsRef.current.has(atm.id)) {
+        const distText = distance < 10 ? 'mesmo ao lado' : `a apenas ${Math.round(distance)} metros`;
+        
         sendNotification(
-          `ATM Próximo: ${atm.bankName} 📍`,
-          `Estás mesmo ao lado do ${atm.locationName}. Ajuda a relatar se este ATM tem dinheiro ou não!`
+          `ATM Muito Próximo! 📍`,
+          `Estás ${distText} do ${atm.bankName} (${atm.locationName}). Ajuda a comunidade relatando o estado atual!`,
+          `proximity-${atm.id}`,
+          window.location.origin
         );
         
         try {
@@ -121,7 +143,7 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
         } catch (e) {}
 
         notifiedAtmsRef.current.add(atm.id);
-      } else if (distance > 100 && notifiedAtmsRef.current.has(atm.id)) {
+      } else if (distance > 150 && notifiedAtmsRef.current.has(atm.id)) {
         notifiedAtmsRef.current.delete(atm.id);
       }
     });
