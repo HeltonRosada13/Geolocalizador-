@@ -34,10 +34,15 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
 
   const sendNotification = (title: string, body: string) => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, {
-        body,
-        icon: '/favicon.ico', // Fallback icon
-      });
+      try {
+        new Notification(title, {
+          body,
+          icon: '/favicon.ico', // Fallback icon
+        });
+      } catch (e) {
+        console.error('Error creating notification:', e);
+        console.log(`[APP NOTIFICATION FALLBACK] ${title}: ${body}`);
+      }
     } else {
       // Fallback for environments where Notification API is blocked (like some iframes)
       console.log(`[APP NOTIFICATION] ${title}: ${body}`);

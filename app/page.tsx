@@ -31,6 +31,8 @@ import Image from 'next/image';
 import { MulticaixaLogo } from '@/components/multicaixa-logo';
 import { WelcomeModal } from '@/components/welcome-modal';
 import { useNotifications } from '@/hooks/use-notifications';
+import { safeStorage } from '@/lib/safe-storage';
+import { safeFormatDistanceToNow } from '@/lib/date-utils';
 import { Settings } from 'lucide-react';
 
 const MapView = dynamic(() => import('@/components/map-view'), { 
@@ -145,7 +147,7 @@ export default function FlipaATM() {
   // AI Insight Generation
   useEffect(() => {
     if (user) {
-      const hasSeenWelcome = localStorage.getItem(`welcome_seen_${user.uid}`);
+      const hasSeenWelcome = safeStorage.getItem(`welcome_seen_${user.uid}`);
       if (!hasSeenWelcome) {
         setShowWelcome(true);
       }
@@ -165,7 +167,7 @@ export default function FlipaATM() {
 
   const handleCloseWelcome = () => {
     if (user) {
-      localStorage.setItem(`welcome_seen_${user.uid}`, 'true');
+      safeStorage.setItem(`welcome_seen_${user.uid}`, 'true');
     }
     setShowWelcome(false);
   };
@@ -193,7 +195,7 @@ export default function FlipaATM() {
             
             ATM: ${atm.bankName} - ${atm.locationName}
             Estado Atual: ${atm.status === 'disponivel' ? 'Tem Dinheiro' : atm.status === 'sem_papel' ? 'Apenas Papel' : 'Sem Dinheiro'}
-            Última atualização: ${atm.lastReportedAt ? formatDistanceToNow(atm.lastReportedAt.toDate ? atm.lastReportedAt.toDate() : new Date(atm.lastReportedAt), { locale: pt }) : 'desconhecida'}
+            Última atualização: ${safeFormatDistanceToNow(atm.lastReportedAt)}
             
             Instruções:
             1. Se estiver 'Tem Dinheiro', incentiva o levantamento agora e menciona a probabilidade de filas ou esgotamento baseado no horário (estamos em Luanda).
@@ -650,7 +652,7 @@ export default function FlipaATM() {
                     'text-gray-600/70'
                   }`}>
                     <Clock className="w-4 h-4" />
-                    Atualizado {selectedATM.lastReportedAt ? formatDistanceToNow(selectedATM.lastReportedAt.toDate ? selectedATM.lastReportedAt.toDate() : new Date(selectedATM.lastReportedAt), { addSuffix: true, locale: pt }) : 'recentemente'}
+                    Atualizado {safeFormatDistanceToNow(selectedATM.lastReportedAt)}
                   </div>
                 </div>
 

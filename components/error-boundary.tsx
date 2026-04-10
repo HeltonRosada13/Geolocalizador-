@@ -31,12 +31,15 @@ export class ErrorBoundary extends Component<Props, State> {
       
       try {
         // Check if it's a Firestore JSON error
-        const parsed = JSON.parse(this.state.error?.message || '');
-        if (parsed.error && parsed.error.includes('permission-denied')) {
-          errorMessage = 'Não tem permissão para realizar esta ação ou aceder a estes dados.';
+        const message = this.state.error?.message;
+        if (message && message.startsWith('{')) {
+          const parsed = JSON.parse(message);
+          if (parsed.error && parsed.error.includes('permission-denied')) {
+            errorMessage = 'Não tem permissão para realizar esta ação ou aceder a estes dados.';
+          }
         }
       } catch (e) {
-        // Not a JSON error
+        // Not a JSON error or invalid JSON
       }
 
       return (
