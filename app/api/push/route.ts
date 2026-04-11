@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
+import firebaseConfig from '../../../firebase-applet-config.json';
 
 if (!admin.apps.length) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
     if (serviceAccount.project_id) {
+      if (serviceAccount.project_id !== firebaseConfig.projectId) {
+        console.warn(`[Push API] Warning: Service account project ID (${serviceAccount.project_id}) does not match config project ID (${firebaseConfig.projectId})`);
+      }
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
@@ -22,8 +27,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Firebase Admin not configured' }, { status: 500 });
     }
 
-    const db = admin.firestore();
-    const tokensSnapshot = await db.collection('fcm_tokens').get();
+    // Use the specific database ID from config to avoid NOT_FOUND (Status 5)
+    const firestore = firebaseConfig.firestoreDatabaseId 
+      ? getFirestore(firebaseConfig.firestoreDatabaseId)
+      : getFirestore();
+
+    const tokensSnapshot = await firestore.collection('fcm_tokens').get();
     
     const tokens: string[] = [];
     tokensSnapshot.forEach(doc => {
