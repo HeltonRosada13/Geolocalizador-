@@ -2,21 +2,44 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ATM } from '@/app/page';
+import { getMessagingInstance, db } from '@/lib/firebase';
+import { getToken, onMessage } from 'firebase/messaging';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-export function useNotifications(atms: ATM[], userLocation: [number, number] | null) {
+export function useNotifications(atms: ATM[], userLocation: [number, number] | null, user: any) {
   const prevAtmsRef = useRef<ATM[]>([]);
   const notifiedAtmsRef = useRef<Set<string>>(new Set());
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
 
   // Register Service Worker and check permission
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').then((registration) => {
-        console.log('Service Worker registered with scope:', registration.scope);
-      }).catch((error) => {
-        console.error('Service Worker registration failed:', error);
+    const setupMessaging = async () => {
+      if (typeof window === 'undefined') return;
+
+      // Register Firebase Service Worker
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          console.log('FCM Service Worker registered:', registration.scope);
+        } catch (error) {
+          console.error('FCM Service Worker registration failed:', error);
+        }
+      }
+
+      const messaging = await getMessagingInstance();
+      if (!messaging) return;
+
+      // Handle foreground messages
+      onMessage(messaging, (payload) => {
+        console.log('Foreground message received:', payload);
+        if (payload.notification) {
+          sendNotification(payload.notification.title || 'Alerta Flipa', payload.notification.body || '');
+        }
       });
-    }
+    };
+
+    setupMessaging();
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'default') {
@@ -34,12 +57,32 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
 
   const requestPermission = async () => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      const permission = await Notification.requestPermission();
-      localStorage.setItem('flipa_notifications_asked', 'true');
-      setShowPermissionPrompt(false);
-      
-      if (permission === 'granted') {
-        sendNotification('Notificações Ativadas! ✅', 'Agora receberá atualizações em tempo real sobre os ATMs de Luanda.');
+      try {
+        const permission = await Notification.requestPermission();
+        localStorage.setItem('flipa_notifications_asked', 'true');
+        setShowPermissionPrompt(false);
+        
+        if (permission === 'granted') {
+          const messaging = await getMessagingInstance();
+          if (messaging && user) {
+            const token = await getToken(messaging, {
+              vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+            });
+            
+            if (token) {
+              setFcmToken(token);
+              // Store token in Firestore for background pushes
+              await setDoc(doc(db, 'fcm_tokens', user.uid), {
+                token,
+                userUid: user.uid,
+                updatedAt: serverTimestamp()
+              });
+            }
+          }
+          sendNotification('Notificações Ativadas! ✅', 'Agora receberá atualizações em tempo real sobre os ATMs de Luanda.');
+        }
+      } catch (error) {
+        console.error('Error requesting notification permission:', error);
       }
     }
   };
@@ -106,6 +149,19 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
               const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3');
               audio.play().catch(e => console.log('Audio play blocked'));
             } catch (e) {}
+          }
+
+          // Trigger background push for other users via API
+          if (user) {
+            fetch('/api/push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: `${statusEmoji} Atualização: ${atm.bankName}`,
+                body: `O caixa no ${atm.locationName} ${statusNames[atm.status]}.`,
+                excludeUser: user.uid
+              })
+            }).catch(e => console.error('Push trigger failed:', e));
           }
 
           sendNotification(

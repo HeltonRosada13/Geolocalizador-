@@ -44,6 +44,17 @@
         "notes": { "type": "string" }
       },
       "required": ["atmId", "userUid", "status", "timestamp"]
+    },
+    "FCMToken": {
+      "title": "FCMToken",
+      "description": "Token para notificações push",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string" },
+        "userUid": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["token", "userUid"]
     }
   },
   "firestore": {
@@ -58,6 +69,10 @@
     "/reports/{reportId}": {
       "schema": "Report",
       "description": "Relatos históricos"
+    },
+    "/fcm_tokens/{userId}": {
+      "schema": "FCMToken",
+      "description": "Tokens de notificação push"
     }
   }
 }

@@ -156,7 +156,7 @@ export default function FlipaATM() {
   }, [user]);
 
   // Notifications
-  const { showPermissionPrompt, requestPermission, setShowPermissionPrompt } = useNotifications(atms, userLocation);
+  const { showPermissionPrompt, requestPermission, setShowPermissionPrompt } = useNotifications(atms, userLocation, user);
 
   // AI Insight Generation
   useEffect(() => {

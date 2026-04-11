@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getMessaging, isSupported } from 'firebase/messaging';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
 // Use the applet config directly as it is managed by the set_up_firebase tool
@@ -25,6 +26,14 @@ if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes('TODO')) {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+
+// Initialize Messaging lazily
+export const getMessagingInstance = async () => {
+  if (typeof window !== 'undefined' && await isSupported()) {
+    return getMessaging(app);
+  }
+  return null;
+};
 
 // Test connection
 async function testConnection() {
