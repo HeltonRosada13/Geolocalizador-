@@ -40,9 +40,56 @@ const WarningIcon = L.divIcon({
 
 function ChangeView({ center }: { center: [number, number] }) {
   const map = useMap();
+  const [lastCenter, setLastCenter] = useState<[number, number] | null>(null);
+  const [isUserInteracting, setIsUserInteracting] = useState(false);
+
   useEffect(() => {
-    map.setView(center);
-  }, [center, map]);
+    const onInteractionStart = () => setIsUserInteracting(true);
+    const onInteractionEnd = () => {
+      // Small delay to resume auto-centering after interaction
+      setTimeout(() => setIsUserInteracting(false), 3000);
+    };
+
+    map.on('dragstart', onInteractionStart);
+    map.on('zoomstart', onInteractionStart);
+    map.on('dragend', onInteractionEnd);
+    map.on('zoomend', onInteractionEnd);
+
+    return () => {
+      map.off('dragstart', onInteractionStart);
+      map.off('zoomstart', onInteractionStart);
+      map.off('dragend', onInteractionEnd);
+      map.off('zoomend', onInteractionEnd);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (!center || isUserInteracting) return;
+
+    // Helper to calculate distance in meters
+    const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    if (!lastCenter) {
+      map.setView(center);
+      setLastCenter(center);
+    } else {
+      const distance = getDistance(lastCenter[0], lastCenter[1], center[0], center[1]);
+      // Only re-center if moved more than 20 meters to avoid "shaking" on mobile
+      if (distance > 20) {
+        map.panTo(center, { animate: true, duration: 1.5 });
+        setLastCenter(center);
+      }
+    }
+  }, [center, map, lastCenter, isUserInteracting]);
   return null;
 }
 
@@ -50,6 +97,7 @@ interface MapViewProps {
   atms: ATM[];
   onSelectATM: (atm: ATM) => void;
   userLocation: [number, number] | null;
+  userHeading?: number | null;
   selectedATM?: ATM | null;
   showRoute?: boolean;
   height?: string;
@@ -106,7 +154,7 @@ function RoutingLayer({ userLocation, destination }: { userLocation: [number, nu
   );
 }
 
-export default function MapView({ atms, onSelectATM, userLocation, selectedATM, showRoute, height = "h-[calc(100vh-250px)]" }: MapViewProps) {
+export default function MapView({ atms, onSelectATM, userLocation, userHeading, selectedATM, showRoute, height = "h-[calc(100vh-250px)]" }: MapViewProps) {
   const defaultCenter: [number, number] = [-8.8383, 13.2344]; // Luanda
   const center = userLocation || defaultCenter;
 
@@ -137,10 +185,34 @@ export default function MapView({ atms, onSelectATM, userLocation, selectedATM, 
 
         {userLocation && (
           <Marker position={userLocation} icon={L.divIcon({
-            className: 'user-loc',
-            html: `<div style="background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 15px #3b82f6;"></div>`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8],
+            className: 'user-loc-arrow',
+            html: `
+              <div style="
+                width: 30px; 
+                height: 30px; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center;
+                transform: rotate(${userHeading || 0}deg);
+                transition: transform 0.3s ease-out;
+              ">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+                </svg>
+                <div style="
+                  position: absolute;
+                  width: 12px;
+                  height: 12px;
+                  background: #3b82f6;
+                  border: 2px solid white;
+                  border-radius: 50%;
+                  z-index: -1;
+                  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+                "></div>
+              </div>
+            `,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
           })}>
             <Popup>Você está aqui</Popup>
           </Marker>

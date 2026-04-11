@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc, getDoc, increment } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
@@ -102,6 +102,19 @@ export default function FlipaATM() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isReporting, setIsReporting] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+  const lastLocationRef = useRef<[number, number] | null>(null);
+
+  // Helper to calculate heading between two points
+  const calculateHeading = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    const θ = Math.atan2(y, x);
+    return (θ * 180 / Math.PI + 360) % 360;
+  };
   const [activeTab, setActiveTab] = useState<'map' | 'list'>('list');
   const [showAdmin, setShowAdmin] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -254,7 +267,12 @@ export default function FlipaATM() {
       // Get initial position
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation([position.coords.latitude, position.coords.longitude]);
+          const newLoc: [number, number] = [position.coords.latitude, position.coords.longitude];
+          setUserLocation(newLoc);
+          if (position.coords.heading !== null) {
+            setUserHeading(position.coords.heading);
+          }
+          lastLocationRef.current = newLoc;
         },
         (error) => {
           console.error("Error getting initial location:", error);
@@ -264,12 +282,30 @@ export default function FlipaATM() {
       // Watch for changes
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
-          setUserLocation([position.coords.latitude, position.coords.longitude]);
+          const newLoc: [number, number] = [position.coords.latitude, position.coords.longitude];
+          setUserLocation(newLoc);
+          
+          if (position.coords.heading !== null) {
+            setUserHeading(position.coords.heading);
+          } else if (lastLocationRef.current) {
+            // Calculate heading from movement if native heading is null
+            const dist = getDistance(lastLocationRef.current[0], lastLocationRef.current[1], newLoc[0], newLoc[1]);
+            if (dist > 2) { // Only update heading if moved more than 2 meters
+              const heading = calculateHeading(
+                lastLocationRef.current[0], 
+                lastLocationRef.current[1], 
+                newLoc[0], 
+                newLoc[1]
+              );
+              setUserHeading(heading);
+            }
+          }
+          lastLocationRef.current = newLoc;
         },
         (error) => {
           console.error("Error watching location:", error);
         },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
       );
 
       return () => navigator.geolocation.clearWatch(watchId);
@@ -630,6 +666,7 @@ export default function FlipaATM() {
                       atms={filteredATMs} 
                       onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
                       userLocation={userLocation}
+                      userHeading={userHeading}
                       selectedATM={selectedATM}
                       showRoute={user && !user.isAnonymous}
                     />
@@ -656,6 +693,7 @@ export default function FlipaATM() {
                       atms={filteredATMs} 
                       onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
                       userLocation={userLocation}
+                      userHeading={userHeading}
                       selectedATM={selectedATM}
                       showRoute={user && !user.isAnonymous}
                     />
@@ -832,6 +870,7 @@ export default function FlipaATM() {
                     atms={[selectedATM]} 
                     onSelectATM={() => {}}
                     userLocation={userLocation}
+                    userHeading={userHeading}
                     selectedATM={selectedATM}
                     showRoute={user && !user.isAnonymous}
                   />
