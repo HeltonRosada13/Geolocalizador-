@@ -263,6 +263,31 @@ export default function FlipaATM() {
 
   // Geolocation with real-time tracking
   useEffect(() => {
+    // 1. Compass / Orientation Tracking
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      let heading: number | null = null;
+      
+      if ((event as any).webkitCompassHeading) {
+        // iOS
+        heading = (event as any).webkitCompassHeading;
+      } else if (event.alpha !== null) {
+        // Android / Desktop with sensors
+        // For absolute orientation, alpha is the compass heading
+        heading = (360 - event.alpha) % 360;
+      }
+
+      if (heading !== null) {
+        setUserHeading(heading);
+      }
+    };
+
+    if (typeof window !== 'undefined' && 'ondeviceorientationabsolute' in window) {
+      window.addEventListener('deviceorientationabsolute', handleOrientation);
+    } else if (typeof window !== 'undefined' && 'ondeviceorientation' in window) {
+      window.addEventListener('deviceorientation', handleOrientation);
+    }
+
+    // 2. Geolocation Tracking
     if ("geolocation" in navigator) {
       // Get initial position
       navigator.geolocation.getCurrentPosition(
@@ -308,7 +333,11 @@ export default function FlipaATM() {
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
       );
 
-      return () => navigator.geolocation.clearWatch(watchId);
+      return () => {
+        navigator.geolocation.clearWatch(watchId);
+        window.removeEventListener('deviceorientationabsolute', handleOrientation);
+        window.removeEventListener('deviceorientation', handleOrientation);
+      };
     }
   }, []);
 
@@ -670,7 +699,25 @@ export default function FlipaATM() {
                       selectedATM={selectedATM}
                       showRoute={user && !user.isAnonymous}
                     />
-                    <div className="absolute top-4 right-4 z-[400]">
+                    <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
+                      {typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function' && !userHeading && (
+                        <button 
+                          onClick={async () => {
+                            try {
+                              const permission = await (DeviceOrientationEvent as any).requestPermission();
+                              if (permission === 'granted') {
+                                window.location.reload();
+                              }
+                            } catch (e) {
+                              console.error(e);
+                            }
+                          }}
+                          className="bg-orange-500 text-white p-2 rounded-xl shadow-lg border border-orange-400 flex items-center gap-2 text-[10px] font-bold"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          BÚSSOLA
+                        </button>
+                      )}
                       <div className="bg-white/90 backdrop-blur p-2 rounded-xl shadow-lg border border-blue-100">
                         <MapPin className="w-5 h-5 text-blue-600" />
                       </div>
@@ -874,9 +921,39 @@ export default function FlipaATM() {
                     selectedATM={selectedATM}
                     showRoute={user && !user.isAnonymous}
                   />
-                  <div className="absolute top-4 right-4 z-[400]">
+                  <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
+                    {typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function' && !userHeading && (
+                      <button 
+                        onClick={async () => {
+                          try {
+                            const permission = await (DeviceOrientationEvent as any).requestPermission();
+                            if (permission === 'granted') {
+                              window.location.reload(); // Reload to activate listeners
+                            }
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                        className="bg-orange-500 text-white p-2 rounded-xl shadow-lg border border-orange-400 flex items-center gap-2 text-[10px] font-bold animate-bounce"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        ATIVAR BÚSSOLA
+                      </button>
+                    )}
                     <button 
-                      onClick={() => {
+                      onClick={async () => {
+                        // Request iOS orientation permission if available
+                        if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+                          try {
+                            const permission = await (DeviceOrientationEvent as any).requestPermission();
+                            if (permission === 'granted') {
+                              console.log('Orientation permission granted');
+                            }
+                          } catch (e) {
+                            console.error('Orientation permission error:', e);
+                          }
+                        }
+
                         if (navigator.geolocation) {
                           navigator.geolocation.getCurrentPosition((pos) => {
                             setUserLocation([pos.coords.latitude, pos.coords.longitude]);

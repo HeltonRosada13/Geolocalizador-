@@ -194,7 +194,7 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
                 align-items: center; 
                 justify-content: center;
                 transform: rotate(${userHeading || 0}deg);
-                transition: transform 0.3s ease-out;
+                transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
               ">
                 <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linejoin="round"/>
