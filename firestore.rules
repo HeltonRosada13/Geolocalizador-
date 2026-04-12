@@ -54,7 +54,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "heltonlisboa937@gmail.com" && request.auth.token.email_verified == true));
+         request.auth.token.email == "heltonlisboa937@gmail.com");
     }
 
     function isValidEmail(email) {
@@ -105,6 +105,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isValidATM(request.resource.data) &&
                       (isAdmin() || 
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'lastReportedAt']));
+      allow delete: if isAdmin();
     }
 
     match /reports/{reportId} {
@@ -129,11 +130,11 @@ service cloud.firestore {
                       request.resource.data.type in ['view_details'];
     }
 
-    match /fcm_tokens/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow write: if isOwner(userId) && 
-                     request.resource.data.token is string &&
-                     request.resource.data.userUid == userId;
+    match /fcm_tokens/{tokenId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      allow write: if isAuthenticated() && 
+                     request.resource.data.userUid == request.auth.uid &&
+                     request.resource.data.token is string;
     }
   }
 }

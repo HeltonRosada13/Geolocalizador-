@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy, addDoc, deleteDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, addDoc, deleteDoc, doc, updateDoc, getDocs, where, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import Image from 'next/image';
 import { MulticaixaLogo } from './multicaixa-logo';
 import { 
@@ -36,6 +36,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingAtm, setEditingAtm] = useState<ATM | null>(null);
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
+  const [atmToDelete, setAtmToDelete] = useState<ATM | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -134,23 +136,49 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       setIsAdding(false);
       setEditingAtm(null);
       setFormData({ bankName: '', locationName: '', address: '', latitude: -8.8383, longitude: 13.2344, status: 'disponivel' });
-      alert(editingAtm ? 'ATM atualizado com sucesso!' : 'Novo ATM adicionado com sucesso!');
+      
+      setStatusMessage({
+        text: editingAtm ? 'ATM atualizado com sucesso!' : 'Novo ATM adicionado com sucesso!',
+        type: 'success'
+      });
+      setTimeout(() => setStatusMessage(null), 3000);
     } catch (error) {
       console.error("Error saving ATM:", error);
       handleFirestoreError(error, OperationType.WRITE, 'atms');
+      setStatusMessage({ text: 'Erro ao guardar as alterações.', type: 'error' });
+      setTimeout(() => setStatusMessage(null), 3000);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja eliminar este ATM? Esta ação é irreversível.')) {
-      try {
-        await deleteDoc(doc(db, 'atms', id));
-        console.log("ATM deleted successfully:", id);
-        alert('ATM eliminado com sucesso!');
-      } catch (error) {
-        console.error("Error deleting ATM:", error);
-        handleFirestoreError(error, OperationType.DELETE, `atms/${id}`);
-      }
+  const handleDelete = async () => {
+    if (!atmToDelete) return;
+    
+    try {
+      const id = atmToDelete.id;
+      const batch = writeBatch(db);
+      
+      // 1. Delete the ATM document
+      batch.delete(doc(db, 'atms', id));
+      
+      // 2. Find and delete all associated reports
+      const reportsQuery = query(collection(db, 'reports'), where('atmId', '==', id));
+      const reportsSnap = await getDocs(reportsQuery);
+      reportsSnap.forEach((reportDoc) => {
+        batch.delete(reportDoc.ref);
+      });
+      
+      // 3. Commit the batch
+      await batch.commit();
+      
+      console.log("ATM and associated reports deleted successfully:", id);
+      setAtmToDelete(null);
+      setStatusMessage({ text: 'ATM e relatos eliminados com sucesso!', type: 'success' });
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch (error) {
+      console.error("Error deleting ATM and reports:", error);
+      handleFirestoreError(error, OperationType.DELETE, `atms/${atmToDelete.id}`);
+      setStatusMessage({ text: 'Erro ao eliminar o ATM.', type: 'error' });
+      setTimeout(() => setStatusMessage(null), 3000);
     }
   };
 
@@ -364,7 +392,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={() => handleDelete(atm.id)}
+                        onClick={() => setAtmToDelete(atm)}
                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -377,6 +405,65 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           </div>
         </section>
       </div>
+
+      {/* Status Message Toast */}
+      <AnimatePresence>
+        {statusMessage && (
+          <motion.div
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 50, opacity: 0 }}
+            className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border ${
+              statusMessage.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 'bg-red-600 border-red-500 text-white'
+            }`}
+          >
+            {statusMessage.type === 'success' ? <TrendingUp className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            <span className="font-bold text-sm">{statusMessage.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {atmToDelete && (
+          <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center space-y-6"
+            >
+              <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 className="w-10 h-10 text-red-600" />
+              </div>
+              
+              <div className="space-y-2">
+                <h4 className="text-xl font-black text-gray-900">Eliminar ATM?</h4>
+                <p className="text-sm text-gray-500">
+                  Tens a certeza que desejas eliminar o <span className="font-bold text-gray-900">{atmToDelete.bankName}</span> em <span className="font-bold text-gray-900">{atmToDelete.locationName}</span>?
+                  <br />
+                  <span className="text-red-600 font-bold mt-2 block italic text-xs">Esta ação é irreversível e apagará todo o histórico.</span>
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleDelete}
+                  className="w-full py-4 bg-red-600 text-white rounded-2xl font-black shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95"
+                >
+                  Sim, Eliminar Agora
+                </button>
+                <button
+                  onClick={() => setAtmToDelete(null)}
+                  className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-bold hover:bg-gray-100 transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Add/Edit Modal */}
       {isAdding && (

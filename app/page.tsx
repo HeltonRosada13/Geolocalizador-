@@ -503,7 +503,7 @@ export default function FlipaATM() {
             <div className="flex gap-3">
               <button 
                 onClick={() => {
-                  localStorage.setItem('flipa_notifications_asked', 'true');
+                  localStorage.setItem('flipa_notifications_dismissed_at', Date.now().toString());
                   setShowPermissionPrompt(false);
                 }}
                 className="flex-1 py-3 text-sm font-bold text-gray-400 hover:bg-gray-50 rounded-xl transition-colors"

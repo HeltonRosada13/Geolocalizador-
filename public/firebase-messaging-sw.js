@@ -15,17 +15,19 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('[SW] Mensagem recebida em segundo plano:', payload);
   
-  const notificationTitle = payload.notification.title || 'Alerta Flipa ATM';
+  const notificationTitle = payload.notification?.title || payload.data?.title || 'Alerta Flipa ATM';
   const notificationOptions = {
-    body: payload.notification.body,
+    body: payload.notification?.body || payload.data?.body || 'Há uma nova atualização nos ATMs.',
     icon: '/icon.svg',
     badge: '/icon.svg',
     data: payload.data || { url: '/' },
     tag: 'flipa-atm-alert',
-    renotify: true
+    renotify: true,
+    requireInteraction: true, // Keep notification visible until user interacts
+    vibrate: [200, 100, 200]
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
 self.addEventListener('notificationclick', (event) => {

@@ -22,6 +22,30 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
         try {
           const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
           console.log('FCM Service Worker registered:', registration.scope);
+          
+          // If permission is already granted, ensure we have the latest token
+          if (Notification.permission === 'granted' && user) {
+            const messaging = await getMessagingInstance();
+            if (messaging) {
+              const token = await getToken(messaging, {
+                vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+              });
+              
+              if (token) {
+                setFcmToken(token);
+                // Use a hash or the token itself as ID to support multiple devices per user
+                const tokenDocId = btoa(token).substring(0, 50).replace(/\//g, '_');
+                await setDoc(doc(db, 'fcm_tokens', tokenDocId), {
+                  token,
+                  userUid: user.uid,
+                  updatedAt: serverTimestamp(),
+                  platform: navigator.platform,
+                  lastSeen: serverTimestamp()
+                }, { merge: true });
+                console.log('FCM Token refreshed/verified');
+              }
+            }
+          }
         } catch (error) {
           console.error('FCM Service Worker registration failed:', error);
         }
@@ -42,16 +66,34 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
     setupMessaging();
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        const hasAsked = localStorage.getItem('flipa_notifications_asked');
-        if (!hasAsked) {
-          // Use a small delay to avoid synchronous state update in effect
-          const timer = setTimeout(() => {
+      const checkPermission = () => {
+        if (Notification.permission === 'default') {
+          const dismissedAt = localStorage.getItem('flipa_notifications_dismissed_at');
+          if (!dismissedAt) {
             setShowPermissionPrompt(true);
-          }, 1000);
-          return () => clearTimeout(timer);
+          } else {
+            const elapsed = Date.now() - parseInt(dismissedAt);
+            if (elapsed >= 120000) { // 2 minutes
+              setShowPermissionPrompt(true);
+            } else {
+              setShowPermissionPrompt(false);
+            }
+          }
+        } else {
+          setShowPermissionPrompt(false);
         }
-      }
+      };
+
+      // Initial check with delay
+      const timer = setTimeout(checkPermission, 2000);
+      
+      // Periodic check every 10 seconds to see if it's time to ask again
+      const interval = setInterval(checkPermission, 10000);
+
+      return () => {
+        clearTimeout(timer);
+        clearInterval(interval);
+      };
     }
   }, []);
 
@@ -59,7 +101,10 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
     if (typeof window !== 'undefined' && 'Notification' in window) {
       try {
         const permission = await Notification.requestPermission();
-        localStorage.setItem('flipa_notifications_asked', 'true');
+        // If they made a choice (granted or denied), we stop the 2-minute cycle
+        if (permission !== 'default') {
+          localStorage.removeItem('flipa_notifications_dismissed_at');
+        }
         setShowPermissionPrompt(false);
         
         if (permission === 'granted') {
@@ -71,12 +116,15 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
             
             if (token) {
               setFcmToken(token);
-              // Store token in Firestore for background pushes
-              await setDoc(doc(db, 'fcm_tokens', user.uid), {
+              // Use a hash or the token itself as ID to support multiple devices per user
+              const tokenDocId = btoa(token).substring(0, 50).replace(/\//g, '_');
+              await setDoc(doc(db, 'fcm_tokens', tokenDocId), {
                 token,
                 userUid: user.uid,
-                updatedAt: serverTimestamp()
-              });
+                updatedAt: serverTimestamp(),
+                platform: navigator.platform,
+                lastSeen: serverTimestamp()
+              }, { merge: true });
             }
           }
           sendNotification('Notificações Ativadas! ✅', 'Agora receberá atualizações em tempo real sobre os ATMs de Luanda.');

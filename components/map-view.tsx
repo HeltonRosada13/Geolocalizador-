@@ -4,18 +4,20 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ATM } from '@/app/page';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Clock, Navigation } from 'lucide-react';
 
 // Fix for default marker icons in Leaflet with Next.js
-const DefaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
+// We do this only once
+if (typeof window !== 'undefined') {
+  const DefaultIcon = L.icon({
+    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+  });
+  L.Marker.prototype.options.icon = DefaultIcon;
+}
 
 const MoneyIcon = L.divIcon({
   className: 'custom-div-icon',
@@ -44,6 +46,8 @@ function ChangeView({ center }: { center: [number, number] }) {
   const [isUserInteracting, setIsUserInteracting] = useState(false);
 
   useEffect(() => {
+    if (!map) return;
+    
     const onInteractionStart = () => setIsUserInteracting(true);
     const onInteractionEnd = () => {
       // Small delay to resume auto-centering after interaction
@@ -64,7 +68,7 @@ function ChangeView({ center }: { center: [number, number] }) {
   }, [map]);
 
   useEffect(() => {
-    if (!center || isUserInteracting) return;
+    if (!center || isUserInteracting || !map) return;
 
     // Helper to calculate distance in meters
     const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -78,16 +82,20 @@ function ChangeView({ center }: { center: [number, number] }) {
       return R * c;
     };
 
-    if (!lastCenter) {
-      map.setView(center);
-      setLastCenter(center);
-    } else {
-      const distance = getDistance(lastCenter[0], lastCenter[1], center[0], center[1]);
-      // Only re-center if moved more than 20 meters to avoid "shaking" on mobile
-      if (distance > 20) {
-        map.panTo(center, { animate: true, duration: 1.5 });
+    try {
+      if (!lastCenter) {
+        map.setView(center);
         setLastCenter(center);
+      } else {
+        const distance = getDistance(lastCenter[0], lastCenter[1], center[0], center[1]);
+        // Only re-center if moved more than 20 meters to avoid "shaking" on mobile
+        if (distance > 20) {
+          map.panTo(center, { animate: true, duration: 1.5 });
+          setLastCenter(center);
+        }
       }
+    } catch (e) {
+      console.warn("Map view update failed:", e);
     }
   }, [center, map, lastCenter, isUserInteracting]);
   return null;
@@ -109,6 +117,8 @@ function RoutingLayer({ userLocation, destination }: { userLocation: [number, nu
   const map = useMap();
 
   useEffect(() => {
+    if (!map) return;
+
     const fetchRoute = async () => {
       try {
         const response = await fetch(
@@ -121,8 +131,10 @@ function RoutingLayer({ userLocation, destination }: { userLocation: [number, nu
           setEta(Math.round(data.routes[0].duration / 60));
           
           // Fit bounds to show the whole route
-          const bounds = L.latLngBounds(coordinates);
-          map.fitBounds(bounds, { padding: [50, 50] });
+          if (map) {
+            const bounds = L.latLngBounds(coordinates);
+            map.fitBounds(bounds, { padding: [50, 50] });
+          }
         }
       } catch (error) {
         console.error("Error fetching route:", error);
@@ -164,6 +176,37 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
     return WarningIcon;
   };
 
+  const userIcon = useMemo(() => L.divIcon({
+    className: 'user-loc-arrow',
+    html: `
+      <div style="
+        width: 30px; 
+        height: 30px; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+        transform: rotate(${userHeading || 0}deg);
+        transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      ">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        <div style="
+          position: absolute;
+          width: 12px;
+          height: 12px;
+          background: #3b82f6;
+          border: 2px solid white;
+          border-radius: 50%;
+          z-index: -1;
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        "></div>
+      </div>
+    `,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  }), [userHeading]);
+
   return (
     <div className={`${height} w-full rounded-3xl overflow-hidden shadow-inner border border-gray-100`}>
       <MapContainer 
@@ -171,6 +214,7 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
         zoom={14} 
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
+        key={atms.length > 0 ? 'map-with-data' : 'map-empty'}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -184,36 +228,7 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
         )}
 
         {userLocation && (
-          <Marker position={userLocation} icon={L.divIcon({
-            className: 'user-loc-arrow',
-            html: `
-              <div style="
-                width: 30px; 
-                height: 30px; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center;
-                transform: rotate(${userHeading || 0}deg);
-                transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-              ">
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linejoin="round"/>
-                </svg>
-                <div style="
-                  position: absolute;
-                  width: 12px;
-                  height: 12px;
-                  background: #3b82f6;
-                  border: 2px solid white;
-                  border-radius: 50%;
-                  z-index: -1;
-                  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
-                "></div>
-              </div>
-            `,
-            iconSize: [30, 30],
-            iconAnchor: [15, 15],
-          })}>
+          <Marker position={userLocation} icon={userIcon}>
             <Popup>Você está aqui</Popup>
           </Marker>
         )}

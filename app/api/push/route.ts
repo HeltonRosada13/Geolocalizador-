@@ -52,10 +52,13 @@ export async function POST(request: Request) {
         body,
       },
       android: {
+        priority: 'high' as const,
         notification: {
           icon: 'stock_ticker_update',
           color: '#002244',
           sound: 'default',
+          tag: 'flipa-atm-alert',
+          clickAction: 'FLIPA_ATM_OPEN',
         },
       },
       apns: {
@@ -63,12 +66,18 @@ export async function POST(request: Request) {
           aps: {
             badge: 1,
             sound: 'default',
+            'content-available': 1,
           },
+        },
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
         },
       },
       webpush: {
         headers: {
           Urgency: 'high',
+          TTL: '2419200', // 4 weeks in seconds (maximum)
         },
         notification: {
           body,
@@ -77,6 +86,7 @@ export async function POST(request: Request) {
           tag: 'flipa-atm-alert',
           renotify: true,
           requireInteraction: true,
+          vibrate: [200, 100, 200],
           actions: [
             {
               action: 'open',
