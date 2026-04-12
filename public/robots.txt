@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /api/
 
-Sitemap: https://geolocalizador-phi.vercel.app/sitemap.xml
+Sitemap: https://ais-pre-qf7s6bypdukcb5bwdncfuc-388026503543.europe-west2.run.app/sitemap.xml

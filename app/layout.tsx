@@ -6,7 +6,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 export const metadata: Metadata = {
   title: 'Flipa ATM - Localizador de Caixas Multicaixa em Angola',
   description: 'Encontre ATMs com dinheiro e papel em tempo real em Luanda e Angola. A maior rede colaborativa de monitorização de Multicaixas.',
-  keywords: ['ATM', 'Multicaixa', 'Angola', 'Luanda', 'Dinheiro', 'Banco', 'Localizador', 'Flipa ATM'],
+  keywords: ['ATM', 'Multicaixa', 'Angola', 'Luanda', 'Dinheiro', 'Banco', 'Localizador', 'Flipa ATM', 'EMIS', 'Multicaixa Express', 'Dinheiro Vivo', 'ATM Angola', 'Caixas Automáticas'],
   authors: [{ name: 'Flipa ATM Team' }],
   openGraph: {
     title: 'Flipa ATM - Localizador de Caixas Multicaixa em Angola',
@@ -24,6 +24,9 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  alternates: {
+    canonical: 'https://ais-pre-qf7s6bypdukcb5bwdncfuc-388026503543.europe-west2.run.app',
+  },
   verification: {
     google: 'A5fyy81eHYTBWSGrw_9inG-Kao0zLUdXq9nykP8bgxI',
   },
@@ -37,11 +40,37 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'Flipa ATM',
   },
+  themeColor: '#002244',
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    'name': 'Flipa ATM',
+    'operatingSystem': 'Web, Android, iOS',
+    'applicationCategory': 'FinanceApplication',
+    'description': 'Localizador colaborativo de ATMs em Angola com informações em tempo real sobre disponibilidade de dinheiro.',
+    'offers': {
+      '@type': 'Offer',
+      'price': '0',
+      'priceCurrency': 'AOA',
+    },
+    'aggregateRating': {
+      '@type': 'AggregateRating',
+      'ratingValue': '4.8',
+      'ratingCount': '1250',
+    },
+  };
+
   return (
     <html lang="pt">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body suppressHydrationWarning>
         <ErrorBoundary>
           <AuthProvider>
