@@ -94,8 +94,8 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
           const registration = await navigator.serviceWorker.ready;
           registration.showNotification(title, {
             body,
-            icon: '/favicon.ico',
-            badge: '/favicon.ico',
+            icon: '/icon.svg',
+            badge: '/icon.svg',
             vibrate: [200, 100, 200],
             tag: tag || 'flipa-general',
             renotify: true,
@@ -108,10 +108,10 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
             ]
           });
         } catch (e) {
-          new Notification(title, { body, icon: '/favicon.ico' });
+          new Notification(title, { body, icon: '/icon.svg' });
         }
       } else {
-        new Notification(title, { body, icon: '/favicon.ico' });
+        new Notification(title, { body, icon: '/icon.svg' });
       }
     }
     console.log(`[NOTIFICATION] ${title}: ${body}`);

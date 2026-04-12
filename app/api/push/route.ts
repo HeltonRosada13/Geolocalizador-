@@ -51,6 +51,43 @@ export async function POST(request: Request) {
         title,
         body,
       },
+      android: {
+        notification: {
+          icon: 'stock_ticker_update',
+          color: '#002244',
+          sound: 'default',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            badge: 1,
+            sound: 'default',
+          },
+        },
+      },
+      webpush: {
+        headers: {
+          Urgency: 'high',
+        },
+        notification: {
+          body,
+          icon: '/icon.svg',
+          badge: '/icon.svg',
+          tag: 'flipa-atm-alert',
+          renotify: true,
+          requireInteraction: true,
+          actions: [
+            {
+              action: 'open',
+              title: 'Ver no Mapa 🗺️',
+            },
+          ],
+        },
+        fcmOptions: {
+          link: '/',
+        },
+      },
       tokens: tokens,
     };
 

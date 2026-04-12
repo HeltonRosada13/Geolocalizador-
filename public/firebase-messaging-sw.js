@@ -20,8 +20,30 @@ messaging.onBackgroundMessage((payload) => {
     body: payload.notification.body,
     icon: '/icon.svg',
     badge: '/icon.svg',
-    data: payload.data
+    data: payload.data || { url: '/' },
+    tag: 'flipa-atm-alert',
+    renotify: true
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  
+  const urlToOpen = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
 });

@@ -29,6 +29,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
+import { IosPwaPrompt } from '@/components/ios-pwa-prompt';
 import { MulticaixaLogo } from '@/components/multicaixa-logo';
 import { WelcomeModal } from '@/components/welcome-modal';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -479,6 +480,7 @@ export default function FlipaATM() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] pb-24 font-sans text-gray-900">
+      <IosPwaPrompt />
       <AnimatePresence>
         {showPermissionPrompt && (
           <motion.div
