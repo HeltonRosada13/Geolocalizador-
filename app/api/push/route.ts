@@ -21,7 +21,7 @@ if (!admin.apps.length) {
 
 export async function POST(request: Request) {
   try {
-    const { title, body, excludeUser } = await request.json();
+    const { title, body, excludeUser, atmId } = await request.json();
 
     if (!admin.apps.length) {
       return NextResponse.json({ error: 'Firebase Admin not configured' }, { status: 500 });
@@ -88,15 +88,17 @@ export async function POST(request: Request) {
           requireInteraction: true,
           vibrate: [200, 100, 200],
           actions: [
-            {
-              action: 'open',
-              title: 'Ver no Mapa 🗺️',
-            },
+            { action: 'confirm_yes', title: 'Tem Dinheiro 💰' },
+            { action: 'confirm_no', title: 'Não Tem ❌' }
           ],
         },
         fcmOptions: {
           link: '/',
         },
+        data: {
+          atmId: atmId || '',
+          url: '/'
+        }
       },
       tokens: tokens,
     };

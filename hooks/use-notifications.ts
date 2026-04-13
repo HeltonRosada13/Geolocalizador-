@@ -148,11 +148,12 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
             tag: tag || 'flipa-general',
             renotify: true,
             data: {
-              url: url || window.location.origin
+              url: url || window.location.origin,
+              atmId: tag?.split('-')[1] || ''
             },
             actions: [
-              { action: 'open', title: 'Ver Detalhes 🔍' },
-              { action: 'close', title: 'Ignorar' }
+              { action: 'confirm_yes', title: 'Tem Dinheiro 💰' },
+              { action: 'confirm_no', title: 'Não Tem ❌' }
             ]
           });
         } catch (e) {
@@ -207,7 +208,8 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
               body: JSON.stringify({
                 title: `${statusEmoji} Atualização: ${atm.bankName}`,
                 body: `O caixa no ${atm.locationName} ${statusNames[atm.status]}.`,
-                excludeUser: user.uid
+                excludeUser: user.uid,
+                atmId: atm.id
               })
             }).catch(e => console.error('Push trigger failed:', e));
           }

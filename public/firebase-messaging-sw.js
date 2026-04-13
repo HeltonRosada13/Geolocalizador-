@@ -33,7 +33,39 @@ messaging.onBackgroundMessage((payload) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
+  const action = event.action;
+  const atmId = event.notification.data?.atmId;
   const urlToOpen = event.notification.data?.url || '/';
+
+  if (action === 'confirm_yes' || action === 'confirm_no') {
+    const status = action === 'confirm_yes' ? 'disponivel' : 'sem_dinheiro';
+    
+    event.waitUntil(
+      fetch('/api/atms/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          atmId,
+          status,
+          userUid: 'notification_action'
+        })
+      }).then(response => {
+        if (response.ok) {
+          console.log('[SW] Status atualizado com sucesso via notificação');
+          // Optionally show a confirmation notification
+          return self.registration.showNotification('Obrigado! 🙏', {
+            body: `Confirmaste que o ATM ${status === 'disponivel' ? 'tem' : 'não tem'} dinheiro. A comunidade agradece!`,
+            icon: '/icon.svg',
+            tag: 'flipa-thanks',
+            timeout: 3000
+          });
+        }
+      }).catch(err => {
+        console.error('[SW] Falha ao atualizar status:', err);
+      })
+    );
+    return;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
