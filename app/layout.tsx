@@ -23,7 +23,16 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    nocache: false,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
   },
+  category: 'finance',
   alternates: {
     canonical: 'https://ais-pre-qf7s6bypdukcb5bwdncfuc-388026503543.europe-west2.run.app',
   },
@@ -66,6 +75,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="pt">
       <head>
+        <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
