@@ -96,7 +96,7 @@ const StatusBadge = ({ status }: { status: ATM['status'] }) => {
 };
 
 export default function FlipaATM() {
-  const { user, loading: authLoading, signInWithGoogle, signInAsGuest, logout } = useAuth();
+  const { user, loading: authLoading, isSigningIn, signInWithGoogle, signInAsGuest, logout } = useAuth();
   const [atms, setAtms] = useState<ATM[]>([]);
   const [selectedATM, setSelectedATM] = useState<ATM | null>(null);
   const [view, setView] = useState<'home' | 'details' | 'report'>('home');
@@ -449,14 +449,16 @@ export default function FlipaATM() {
           <div className="flex flex-col items-center space-y-3">
             <button
               onClick={signInAsGuest}
-              className="w-[200px] h-[60px] bg-[#002244] text-white rounded-2xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-900 transition-all active:scale-[0.98]"
+              disabled={isSigningIn}
+              className="w-[200px] h-[60px] bg-[#002244] text-white rounded-2xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-900 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Entrar
+              {isSigningIn ? 'Entrando...' : 'Entrar'}
             </button>
 
             <button
               onClick={signInWithGoogle}
-              className="w-[200px] h-[60px] flex items-center justify-center gap-3 bg-white border-2 border-gray-100 text-gray-700 rounded-2xl font-bold shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all active:scale-95"
+              disabled={isSigningIn}
+              className="w-[200px] h-[60px] flex items-center justify-center gap-3 bg-white border-2 border-gray-100 text-gray-700 rounded-2xl font-bold shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Image 
                 src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
@@ -466,7 +468,7 @@ export default function FlipaATM() {
                 className="w-5 h-5" 
                 referrerPolicy="no-referrer"
               />
-              Google
+              {isSigningIn ? 'Aguarde...' : 'Google'}
             </button>
           </div>
 

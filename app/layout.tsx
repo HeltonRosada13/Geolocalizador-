@@ -14,6 +14,14 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'pt_AO',
     siteName: 'Flipa ATM',
+    images: [
+      {
+        url: '/icon.svg',
+        width: 512,
+        height: 512,
+        alt: 'Flipa ATM Logo',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -41,7 +49,11 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   icons: {
-    icon: '/icon.svg',
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', sizes: '192x192', type: 'image/svg+xml' },
+      { url: '/icon.svg', sizes: '512x512', type: 'image/svg+xml' },
+    ],
     apple: '/icon.svg',
   },
   appleWebApp: {

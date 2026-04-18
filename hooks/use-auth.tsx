@@ -15,6 +15,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isSigningIn: boolean;
   signInWithGoogle: () => Promise<void>;
   signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
@@ -25,6 +26,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -57,19 +59,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = async () => {
+    if (isSigningIn) return;
+    
     const provider = new GoogleAuthProvider();
+    // Sometimes force selection can help with state-related failures on Safari
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
+    setIsSigningIn(true);
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error('Login error:', error);
       if (error.code === 'auth/unauthorized-domain') {
-        alert('Erro: Este domínio não está autorizado no Firebase. Adicione "geolocalizador-phi.vercel.app" aos domínios autorizados na Consola do Firebase.');
+        alert('Erro: Este domínio não está autorizado no Firebase. Adicione o domínio atual aos domínios autorizados na Consola do Firebase.');
       } else if (error.code === 'auth/popup-closed-by-user') {
         // Do nothing, user just closed the popup
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Silent fail for cancelled popups, as it usually means another is active
+        console.warn('Popup request was cancelled.');
       } else {
         alert('Erro ao entrar com o Google: ' + (error.message || 'Erro desconhecido'));
       }
       throw error;
+    } finally {
+      setIsSigningIn(false);
     }
   };
 
@@ -91,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInAsGuest, logout }}>
+    <AuthContext.Provider value={{ user, loading, isSigningIn, signInWithGoogle, signInAsGuest, logout }}>
       {children}
     </AuthContext.Provider>
   );
