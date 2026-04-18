@@ -191,10 +191,22 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       const distanceEncountered = R * c;
 
-      // Ignore very small movements (less than 1.5 meters)
-      if (distanceEncountered < 1.5) return prev;
+      // Ignore very small movements (less than 2.0 meters) to stop "flickering"
+      if (distanceEncountered < 2.0) return prev;
 
-      const alpha = distanceEncountered < 10 ? 0.3 : 0.6; 
+      // Anti-drift: If the jump is massive (> 500m) suddenly, it's likely a GPS glitch
+      if (distanceEncountered > 500) {
+        console.warn("Massive GPS jump detected, ignoring to prevent drifting.");
+        return prev;
+      }
+
+      // Dynamic smoothing: 
+      // Small distance = very smooth (slow follow)
+      // Medium distance = normal follow
+      // Large distance = snap faster to prevent being left behind
+      let alpha = 0.2;
+      if (distanceEncountered > 30) alpha = 0.5;
+      if (distanceEncountered > 100) alpha = 0.8;
       
       return [
         lat1 + alpha * (lat2 - lat1),
@@ -213,7 +225,9 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
       if (diff > 180) diff -= 360;
       if (diff < -180) diff += 360;
       
-      const alpha = 0.2; // High smoothing for compass
+      // Dynamic alpha: more reactive for larger turns, smoother for small jitters
+      let alpha = Math.abs(diff) > 20 ? 0.4 : 0.15;
+      
       return (prev + alpha * diff + 360) % 360;
     });
   }, [userHeading]);

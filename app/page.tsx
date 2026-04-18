@@ -264,16 +264,16 @@ export default function FlipaATM() {
 
   // Geolocation with real-time tracking
   useEffect(() => {
-    // 1. Compass / Orientation Tracking
+    let orientationActive = false;
+
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let heading: number | null = null;
       
-      if ((event as any).webkitCompassHeading) {
+      if ((event as any).webkitCompassHeading !== undefined && (event as any).webkitCompassHeading !== null) {
         // iOS
         heading = (event as any).webkitCompassHeading;
       } else if (event.alpha !== null) {
-        // Android / Desktop with sensors
-        // For absolute orientation, alpha is the compass heading
+        // Android
         heading = (360 - event.alpha) % 360;
       }
 
@@ -282,10 +282,21 @@ export default function FlipaATM() {
       }
     };
 
-    if (typeof window !== 'undefined' && 'ondeviceorientationabsolute' in window) {
-      window.addEventListener('deviceorientationabsolute', handleOrientation);
-    } else if (typeof window !== 'undefined' && 'ondeviceorientation' in window) {
-      window.addEventListener('deviceorientation', handleOrientation);
+    const startOrientation = () => {
+      if (orientationActive) return;
+      if (typeof window !== 'undefined') {
+        if ('ondeviceorientationabsolute' in window) {
+          window.addEventListener('deviceorientationabsolute', handleOrientation);
+        } else if ('ondeviceorientation' in window) {
+          window.addEventListener('deviceorientation', handleOrientation);
+        }
+        orientationActive = true;
+      }
+    };
+
+    // Auto-start if not on iOS or if permission wasn't needed
+    if (typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission !== 'function') {
+      startOrientation();
     }
 
     // 2. Geolocation Tracking
@@ -308,6 +319,12 @@ export default function FlipaATM() {
       // Watch for changes
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
+          // FILTER: Ignore low accuracy updates to prevent "traveling" markers
+          if (position.coords.accuracy > 70) {
+            console.warn(`Ignoring low accuracy update: ${position.coords.accuracy}m`);
+            return;
+          }
+
           const newLoc: [number, number] = [position.coords.latitude, position.coords.longitude];
           setUserLocation(newLoc);
           
@@ -482,6 +499,22 @@ export default function FlipaATM() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] pb-24 font-sans text-gray-900">
+      <script dangerouslySetInnerHTML={{ __html: `
+        window.startCompass = async function() {
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+              const permission = await DeviceOrientationEvent.requestPermission();
+              if (permission === 'granted') {
+                window.location.reload(); // Still safest to reload on iOS to propagate permission
+              } else {
+                alert('Permissão de bússola negada. Para ver a sua direção, autorize o acesso aos sensores.');
+              }
+            } catch (e) {
+              console.error(e);
+            }
+          }
+        }
+      `}} />
       <IosPwaPrompt />
       <AnimatePresence>
         {showPermissionPrompt && (
@@ -706,20 +739,11 @@ export default function FlipaATM() {
                     <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
                       {typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function' && !userHeading && (
                         <button 
-                          onClick={async () => {
-                            try {
-                              const permission = await (DeviceOrientationEvent as any).requestPermission();
-                              if (permission === 'granted') {
-                                window.location.reload();
-                              }
-                            } catch (e) {
-                              console.error(e);
-                            }
-                          }}
-                          className="bg-orange-500 text-white p-2 rounded-xl shadow-lg border border-orange-400 flex items-center gap-2 text-[10px] font-bold"
+                          onClick={() => (window as any).startCompass()}
+                          className="bg-orange-500 text-white p-3 rounded-2xl shadow-lg border border-orange-400 flex items-center gap-2 text-xs font-black animate-bounce"
                         >
-                          <Sparkles className="w-4 h-4" />
-                          BÚSSOLA
+                          <Sparkles className="w-5 h-5" />
+                          ATIVAR BÚSSOLA
                         </button>
                       )}
                       <div className="bg-white/90 backdrop-blur p-2 rounded-xl shadow-lg border border-blue-100">
