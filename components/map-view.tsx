@@ -88,8 +88,8 @@ function ChangeView({ center }: { center: [number, number] }) {
         setLastCenter(center);
       } else {
         const distance = getDistance(lastCenter[0], lastCenter[1], center[0], center[1]);
-        // Only re-center if moved more than 20 meters to avoid "shaking" on mobile
-        if (distance > 20) {
+        // Only re-center if moved more than 25 meters to avoid "shaking" on mobile
+        if (distance > 25) {
           map.panTo(center, { animate: true, duration: 1.5 });
           setLastCenter(center);
         }
@@ -97,7 +97,7 @@ function ChangeView({ center }: { center: [number, number] }) {
     } catch (e) {
       console.warn("Map view update failed:", e);
     }
-  }, [center, map, lastCenter, isUserInteracting]);
+  }, [center[0], center[1], map, isUserInteracting]);
   return null;
 }
 
@@ -175,50 +175,48 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
   useEffect(() => {
     if (!userLocation) return;
     
-    if (!smoothedLoc) {
-      setSmoothedLoc(userLocation);
-      return;
-    }
+    setSmoothedLoc(prev => {
+      if (!prev) return userLocation;
 
-    const [lat1, lon1] = smoothedLoc;
-    const [lat2, lon2] = userLocation;
-    
-    // Distance check
-    const R = 6371e3;
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distanceEncountered = R * c;
+      const [lat1, lon1] = prev;
+      const [lat2, lon2] = userLocation;
+      
+      // Distance check
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distanceEncountered = R * c;
 
-    // Smoothing factor (Alpha)
-    // 0.2 = Very smooth but small delay
-    // 0.8 = Very reactive but jerky
-    const alpha = distanceEncountered < 10 ? 0.3 : 0.6; 
-    
-    // Ignore very small movements (less than 1.5 meters) to stop "flickering" when stationary
-    if (distanceEncountered < 1.5) return;
+      // Ignore very small movements (less than 1.5 meters)
+      if (distanceEncountered < 1.5) return prev;
 
-    setSmoothedLoc([
-      lat1 + alpha * (lat2 - lat1),
-      lon1 + alpha * (lon2 - lon1)
-    ]);
-  }, [userLocation, smoothedLoc]);
+      const alpha = distanceEncountered < 10 ? 0.3 : 0.6; 
+      
+      return [
+        lat1 + alpha * (lat2 - lat1),
+        lon1 + alpha * (lon2 - lon1)
+      ];
+    });
+  }, [userLocation]);
 
   // Smoothing for Compass Heading
   useEffect(() => {
     if (userHeading === undefined || userHeading === null) return;
     
-    // Handle degree wrap-around (360 -> 0)
-    let diff = userHeading - smoothedHeading;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    
-    const alpha = 0.2; // High smoothing for compass
-    setSmoothedHeading(prev => (prev + alpha * diff + 360) % 360);
-  }, [userHeading, smoothedHeading]);
+    setSmoothedHeading(prev => {
+      // Handle degree wrap-around (360 -> 0)
+      let diff = userHeading - prev;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      
+      const alpha = 0.2; // High smoothing for compass
+      return (prev + alpha * diff + 360) % 360;
+    });
+  }, [userHeading]);
 
   const center = smoothedLoc || defaultCenter;
 
