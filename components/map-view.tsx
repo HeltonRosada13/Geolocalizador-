@@ -168,7 +168,59 @@ function RoutingLayer({ userLocation, destination }: { userLocation: [number, nu
 
 export default function MapView({ atms, onSelectATM, userLocation, userHeading, selectedATM, showRoute, height = "h-[calc(100vh-250px)]" }: MapViewProps) {
   const defaultCenter: [number, number] = [-8.8383, 13.2344]; // Luanda
-  const center = userLocation || defaultCenter;
+  const [smoothedLoc, setSmoothedLoc] = useState<[number, number] | null>(userLocation);
+  const [smoothedHeading, setSmoothedHeading] = useState<number>(userHeading || 0);
+
+  // Smoothing logic for GPS jitter
+  useEffect(() => {
+    if (!userLocation) return;
+    
+    if (!smoothedLoc) {
+      setSmoothedLoc(userLocation);
+      return;
+    }
+
+    const [lat1, lon1] = smoothedLoc;
+    const [lat2, lon2] = userLocation;
+    
+    // Distance check
+    const R = 6371e3;
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distanceEncountered = R * c;
+
+    // Smoothing factor (Alpha)
+    // 0.2 = Very smooth but small delay
+    // 0.8 = Very reactive but jerky
+    const alpha = distanceEncountered < 10 ? 0.3 : 0.6; 
+    
+    // Ignore very small movements (less than 1.5 meters) to stop "flickering" when stationary
+    if (distanceEncountered < 1.5) return;
+
+    setSmoothedLoc([
+      lat1 + alpha * (lat2 - lat1),
+      lon1 + alpha * (lon2 - lon1)
+    ]);
+  }, [userLocation, smoothedLoc]);
+
+  // Smoothing for Compass Heading
+  useEffect(() => {
+    if (userHeading === undefined || userHeading === null) return;
+    
+    // Handle degree wrap-around (360 -> 0)
+    let diff = userHeading - smoothedHeading;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    
+    const alpha = 0.2; // High smoothing for compass
+    setSmoothedHeading(prev => (prev + alpha * diff + 360) % 360);
+  }, [userHeading, smoothedHeading]);
+
+  const center = smoothedLoc || defaultCenter;
 
   const getIcon = (status: ATM['status']) => {
     if (status === 'disponivel') return MoneyIcon;
@@ -180,32 +232,40 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
     className: 'user-loc-arrow',
     html: `
       <div style="
-        width: 30px; 
-        height: 30px; 
+        width: 38px; 
+        height: 38px; 
         display: flex; 
         align-items: center; 
         justify-content: center;
-        transform: rotate(${userHeading || 0}deg);
-        transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        transform: rotate(${smoothedHeading}deg);
+        transition: transform 0.4s ease-out;
       ">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3))">
           <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="#3b82f6" stroke="white" stroke-width="2" stroke-linejoin="round"/>
         </svg>
         <div style="
           position: absolute;
-          width: 12px;
-          height: 12px;
+          width: 14px;
+          height: 14px;
           background: #3b82f6;
           border: 2px solid white;
           border-radius: 50%;
           z-index: -1;
-          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+          box-shadow: 0 0 15px rgba(59, 130, 246, 0.8), 0 0 30px rgba(59, 130, 246, 0.4);
+          animation: user-pulse 2s infinite;
         "></div>
       </div>
+      <style>
+        @keyframes user-pulse {
+          0% { transform: scale(1); opacity: 0.8; }
+          50% { transform: scale(1.5); opacity: 0.2; }
+          100% { transform: scale(1); opacity: 0.8; }
+        }
+      </style>
     `,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  }), [userHeading]);
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+  }), [smoothedHeading]);
 
   return (
     <div className={`${height} w-full rounded-3xl overflow-hidden shadow-inner border border-gray-100`}>
@@ -223,12 +283,12 @@ export default function MapView({ atms, onSelectATM, userLocation, userHeading, 
         
         <ChangeView center={center} />
 
-        {userLocation && selectedATM && showRoute && (
-          <RoutingLayer userLocation={userLocation} destination={selectedATM} />
+        {smoothedLoc && selectedATM && showRoute && (
+          <RoutingLayer userLocation={smoothedLoc} destination={selectedATM} />
         )}
 
-        {userLocation && (
-          <Marker position={userLocation} icon={userIcon}>
+        {smoothedLoc && (
+          <Marker position={smoothedLoc} icon={userIcon}>
             <Popup>Você está aqui</Popup>
           </Marker>
         )}
