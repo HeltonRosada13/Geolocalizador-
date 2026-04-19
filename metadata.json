@@ -1,5 +1,9 @@
 {
   "name": "Flipa ATM",
-  "description": "Localize ATMs próximos em Luanda com informações em tempo real sobre disponibilidade de dinheiro e papel.",
-  "requestFramePermissions": ["geolocation", "notifications"]
+  "description": "Localizador inteligente de ATMs Multicaixa em Angola. Verifique em tempo real quais ATMs têm dinheiro, papel ou estão fora de serviço.",
+  "requestFramePermissions": [
+
+    "geolocation",
+    "notifications"
+  ]
 }

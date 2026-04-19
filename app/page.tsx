@@ -1,143 +1,95 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc, getDoc, increment } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
   MapPin, 
-  CreditCard, 
-  FileText, 
   ChevronRight, 
-  ThumbsUp, 
-  ThumbsDown, 
   Clock, 
   Navigation,
   LogOut,
   PlusCircle,
   AlertCircle,
   Sparkles,
-  Mail,
   Lock,
   Bell,
-  User as UserIcon
+  Award,
+  Settings,
+  X,
+  HelpCircle
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
-import { formatDistanceToNow } from 'date-fns';
-import { pt } from 'date-fns/locale';
+
+import { ATM } from '@/lib/types';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { IosPwaPrompt } from '@/components/ios-pwa-prompt';
 import { MulticaixaLogo } from '@/components/multicaixa-logo';
 import { WelcomeModal } from '@/components/welcome-modal';
+import { HelpModal } from '@/components/help-modal';
 import { useNotifications } from '@/hooks/use-notifications';
 import { safeStorage } from '@/lib/safe-storage';
-import { safeFormatDistanceToNow } from '@/lib/date-utils';
-import { Settings } from 'lucide-react';
-
-const MapView = dynamic(() => import('@/components/map-view'), { 
-  ssr: false,
-  loading: () => <div className="h-[400px] w-full bg-gray-100 animate-pulse rounded-3xl flex items-center justify-center text-gray-400">Carregando Mapa...</div>
-});
 
 const AdminPanel = dynamic(() => import('@/components/admin-panel'), { ssr: false });
-const AIAssistant = dynamic(() => import('@/components/ai-assistant'), { ssr: false });
+const MapView = dynamic(() => import('@/components/map-view'), { ssr: false });
 
-// --- Types ---
-export interface ATM {
-  id: string;
-  bankName: string;
-  locationName: string;
-  address?: string;
-  latitude: number;
-  longitude: number;
-  status: 'disponivel' | 'sem_dinheiro' | 'sem_papel' | 'fora_de_servico';
-  lastReportedAt: any;
-  notes?: string;
-}
-
-interface Report {
-  id: string;
-  atmId: string;
-  userUid: string;
-  userName: string;
-  status: 'disponivel' | 'sem_dinheiro' | 'sem_papel' | 'fora_de_servico';
-  timestamp: any;
-  notes?: string;
-}
-
-// --- Components ---
-
-const StatusBadge = ({ status }: { status: ATM['status'] }) => {
-  const configs = {
-    disponivel: { 
-      dot: 'bg-green-500 shadow-green-200' 
-    },
-    sem_dinheiro: { 
-      dot: 'bg-gray-500 shadow-gray-200' 
-    },
-    sem_papel: { 
-      dot: 'bg-orange-500 shadow-orange-200' 
-    },
-    fora_de_servico: { 
-      dot: 'bg-gray-500 shadow-gray-200' 
-    },
-  };
-
-  const config = configs[status];
-
-  return (
-    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-white shadow-sm border border-gray-100">
-      <span className={`w-2.5 h-2.5 rounded-full shadow-lg animate-pulse ${config.dot}`} />
-    </div>
-  );
-};
-
-export default function FlipaATM() {
+export default function FlipaATMApp() {
   const { user, loading: authLoading, isSigningIn, signInWithGoogle, signInAsGuest, logout } = useAuth();
-  const [atms, setAtms] = useState<ATM[]>([]);
-  const [selectedATM, setSelectedATM] = useState<ATM | null>(null);
-  const [view, setView] = useState<'home' | 'details' | 'report'>('home');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isReporting, setIsReporting] = useState(false);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [userHeading, setUserHeading] = useState<number | null>(null);
-  const lastLocationRef = useRef<[number, number] | null>(null);
-
-  // Helper to calculate heading between two points
-  const calculateHeading = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-    const y = Math.sin(Δλ) * Math.cos(φ2);
-    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-    const θ = Math.atan2(y, x);
-    return (θ * 180 / Math.PI + 360) % 360;
-  };
-  const [activeTab, setActiveTab] = useState<'map' | 'list'>('list');
   const [showAdmin, setShowAdmin] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showGuestNotice, setShowGuestNotice] = useState(false);
-  const [aiInsight, setAiInsight] = useState<string>('A carregar análise inteligente...');
+
+  const [atms, setAtms] = useState<ATM[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<'todos' | 'disponivel' | 'sem_dinheiro'>('todos');
   const [userReputation, setUserReputation] = useState(0);
+  const [activeTab, setActiveTab] = useState<'mapa' | 'lista' | 'ajuda' | 'perfil'>('lista');
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+  const [selectedAtm, setSelectedAtm] = useState<ATM | null>(null);
+  const [showRoute, setShowRoute] = useState(false);
 
-  // Helper to calculate distance in meters
-  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
+  // Initialize notifications
+  const { setShowPermissionPrompt } = useNotifications(atms, userLocation, user);
 
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  // Geolocation and Heading
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if ('geolocation' in navigator) {
+        const watchId = navigator.geolocation.watchPosition(
+          (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
+          (err) => console.warn("Geolocation error:", err),
+          { enableHighAccuracy: true }
+        );
+        return () => navigator.geolocation.clearWatch(watchId);
+      }
 
-    return R * c;
-  };
+      const handleOrientation = (e: DeviceOrientationEvent) => {
+        if (e.webkitCompassHeading) {
+          setUserHeading(e.webkitCompassHeading);
+        } else if (e.alpha !== null) {
+          setUserHeading(360 - e.alpha);
+        }
+      };
+
+      if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', handleOrientation, true);
+        return () => window.removeEventListener('deviceorientation', handleOrientation);
+      }
+    }
+  }, []);
+
+  // Fetch ATMs
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'atms'), (snapshot) => {
+      setAtms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ATM)));
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Fetch User Reputation
   useEffect(() => {
@@ -147,335 +99,94 @@ export default function FlipaATM() {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             setUserReputation(userDoc.data().reputation || 0);
+          } else {
+            // Initialize user doc if not exists
+            await updateDoc(doc(db, 'users', user.uid), {
+                reputation: 0,
+                lastActiveAt: serverTimestamp()
+            }).catch(() => {
+                // Ignore if it fails during init
+            });
           }
         } catch (error) {
           console.error("Error fetching reputation:", error);
         }
       };
       fetchReputation();
-    }
-  }, [user]);
-
-  // Notifications
-  const { showPermissionPrompt, requestPermission, setShowPermissionPrompt } = useNotifications(atms, userLocation, user);
-
-  // AI Insight Generation
-  useEffect(() => {
-    if (user) {
-      const hasSeenWelcome = safeStorage.getItem(`welcome_seen_${user.uid}`);
+      
+      const hasSeenWelcome = safeStorage.getItem(`welcome_seen_flipa_${user.uid}`);
       if (!hasSeenWelcome) {
         setShowWelcome(true);
       }
 
       if (user.isAnonymous) {
         setShowGuestNotice(true);
-        
-        // Mostrar a notificação a cada 2 minutos
-        const interval = setInterval(() => {
-          setShowGuestNotice(true);
-        }, 120000); // 120,000 ms = 2 minutos
-
-        return () => clearInterval(interval);
       }
     }
   }, [user]);
 
   const handleCloseWelcome = () => {
     if (user) {
-      safeStorage.setItem(`welcome_seen_${user.uid}`, 'true');
+      safeStorage.setItem(`welcome_seen_flipa_${user.uid}`, 'true');
     }
     setShowWelcome(false);
   };
-
-  useEffect(() => {
-    if (selectedATM && view === 'details') {
-      // Log usage when viewing details
-      if (user) {
-        addDoc(collection(db, 'analytics_usage'), {
-          userUid: user.uid,
-          atmId: selectedATM.id,
-          bankName: selectedATM.bankName,
-          locationName: selectedATM.locationName,
-          timestamp: serverTimestamp(),
-          type: 'view_details'
-        }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'analytics_usage'));
-      }
-      
-      const generateInsight = async (atm: ATM) => {
-        setAiInsight('A analisar dados em tempo real...');
-        try {
-          const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
-          const prompt = `
-            Analisa o estado atual deste ATM em Luanda e gera um "Flipa AI Insight" curto (máximo 2 frases).
-            
-            ATM: ${atm.bankName} - ${atm.locationName}
-            Estado Atual: ${atm.status === 'disponivel' ? 'Tem Dinheiro' : atm.status === 'sem_papel' ? 'Apenas Papel' : 'Sem Dinheiro'}
-            Última atualização: ${safeFormatDistanceToNow(atm.lastReportedAt)}
-            
-            Instruções:
-            1. Se estiver 'Tem Dinheiro', incentiva o levantamento agora e menciona a probabilidade de filas ou esgotamento baseado no horário (estamos em Luanda).
-            2. Se estiver 'Apenas Papel' ou 'Sem Dinheiro', sugere paciência ou procurar outro próximo, com um tom empático e premium.
-            3. Usa um tom sofisticado e útil.
-            4. Não uses aspas na resposta.
-          `;
-
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: prompt,
-          });
-
-          setAiInsight(response.text || "Mantenha-se atento aos relatos da comunidade para a melhor experiência.");
-        } catch (error) {
-          console.error("AI Insight Error:", error);
-          if (atm.status === 'disponivel') {
-            setAiInsight("Este ATM apresenta boa estabilidade. Recomendamos realizar a sua operação agora para evitar a azáfama do final do dia.");
-          } else {
-            setAiInsight("A nossa rede indica instabilidade neste ponto. Por favor, verifique as alternativas próximas no mapa.");
-          }
-        }
-      };
-      generateInsight(selectedATM);
-    }
-  }, [selectedATM, view, user]);
-
-  // Search Analytics
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (searchQuery.trim().length > 2 && user) {
-        addDoc(collection(db, 'analytics_searches'), {
-          query: searchQuery.trim().toLowerCase(),
-          userUid: user.uid,
-          timestamp: serverTimestamp()
-        }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'analytics_searches'));
-      }
-    }, 2000);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, user]);
 
   // Update User Activity
   useEffect(() => {
     if (user) {
       updateDoc(doc(db, 'users', user.uid), {
         lastActiveAt: serverTimestamp()
-      }).catch(e => handleFirestoreError(e, OperationType.UPDATE, `users/${user.uid}`));
+      }).catch(e => console.error("Update activity error:", e));
     }
-  }, [user, view, activeTab]);
-
-  // Geolocation with real-time tracking
-  useEffect(() => {
-    let orientationActive = false;
-
-    const handleOrientation = (event: DeviceOrientationEvent) => {
-      let heading: number | null = null;
-      
-      if ((event as any).webkitCompassHeading !== undefined && (event as any).webkitCompassHeading !== null) {
-        // iOS
-        heading = (event as any).webkitCompassHeading;
-      } else if (event.alpha !== null) {
-        // Android
-        heading = (360 - event.alpha) % 360;
-      }
-
-      if (heading !== null) {
-        setUserHeading(heading);
-      }
-    };
-
-    const startOrientation = () => {
-      if (orientationActive) return;
-      if (typeof window !== 'undefined') {
-        if ('ondeviceorientationabsolute' in window) {
-          window.addEventListener('deviceorientationabsolute', handleOrientation);
-        } else if ('ondeviceorientation' in window) {
-          window.addEventListener('deviceorientation', handleOrientation);
-        }
-        orientationActive = true;
-      }
-    };
-
-    // Auto-start if not on iOS or if permission wasn't needed
-    if (typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission !== 'function') {
-      startOrientation();
-    }
-
-    // 2. Geolocation Tracking
-    if ("geolocation" in navigator) {
-      // Get initial position
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const newLoc: [number, number] = [position.coords.latitude, position.coords.longitude];
-          setUserLocation(newLoc);
-          if (position.coords.heading !== null) {
-            setUserHeading(position.coords.heading);
-          }
-          lastLocationRef.current = newLoc;
-        },
-        (error) => {
-          console.error("Error getting initial location:", error);
-        }
-      );
-
-      // Watch for changes
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          // FILTER: Ignore low accuracy updates to prevent "traveling" markers
-          if (position.coords.accuracy > 70) {
-            console.warn(`Ignoring low accuracy update: ${position.coords.accuracy}m`);
-            return;
-          }
-
-          const newLoc: [number, number] = [position.coords.latitude, position.coords.longitude];
-          setUserLocation(newLoc);
-          
-          if (position.coords.heading !== null) {
-            setUserHeading(position.coords.heading);
-          } else if (lastLocationRef.current) {
-            // Calculate heading from movement if native heading is null
-            const dist = getDistance(lastLocationRef.current[0], lastLocationRef.current[1], newLoc[0], newLoc[1]);
-            if (dist > 2) { // Only update heading if moved more than 2 meters
-              const heading = calculateHeading(
-                lastLocationRef.current[0], 
-                lastLocationRef.current[1], 
-                newLoc[0], 
-                newLoc[1]
-              );
-              setUserHeading(heading);
-            }
-          }
-          lastLocationRef.current = newLoc;
-        },
-        (error) => {
-          console.error("Error watching location:", error);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
-      );
-
-      return () => {
-        navigator.geolocation.clearWatch(watchId);
-        window.removeEventListener('deviceorientationabsolute', handleOrientation);
-        window.removeEventListener('deviceorientation', handleOrientation);
-      };
-    }
-  }, []);
-
-  // Fetch ATMs
-  useEffect(() => {
-    if (!user) return;
-
-    const q = query(collection(db, 'atms'), orderBy('bankName', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const atmList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ATM));
-      setAtms(atmList);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'atms');
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  const handleReport = async (status: ATM['status']) => {
-    if (!selectedATM || !user) return;
-
-    // Proximity Check: 30 meters
-    if (userLocation) {
-      const distance = getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude);
-      if (distance > 30) {
-        alert(`Estás a ${Math.round(distance)}m deste ATM. Precisas de estar a menos de 30m para relatar.`);
-        return;
-      }
-    } else {
-      alert("Não conseguimos determinar a tua localização. Ativa o GPS para relatar.");
-      return;
-    }
-
-    setIsReporting(true);
-
-    try {
-      // 1. Add report
-      await addDoc(collection(db, 'reports'), {
-        atmId: selectedATM.id,
-        userUid: user.uid,
-        userName: user.displayName || 'Utilizador Anónimo',
-        status,
-        timestamp: serverTimestamp(),
-      });
-
-      // 2. Update ATM status
-      await updateDoc(doc(db, 'atms', selectedATM.id), {
-        status,
-        lastReportedAt: serverTimestamp(),
-      });
-
-      // 3. Increment User Reputation (Unlock more ATMs)
-      await updateDoc(doc(db, 'users', user.uid), {
-        reputation: increment(1)
-      });
-      setUserReputation(prev => prev + 1);
-
-      setSelectedATM(prev => prev ? { ...prev, status, lastReportedAt: new Date() } : null);
-      setView('details');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'reports');
-    } finally {
-      setIsReporting(false);
-    }
-  };
-
-  const filteredATMs = atms
-    .filter(atm => 
-      atm.bankName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      atm.locationName.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => {
-      if (!userLocation) return 0;
-      const distA = getDistance(userLocation[0], userLocation[1], a.latitude, a.longitude);
-      const distB = getDistance(userLocation[0], userLocation[1], b.latitude, b.longitude);
-      return distA - distB;
-    });
+  }, [user, activeTab]);
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F8F9FB]">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"
-        />
+      <div className="flex items-center justify-center min-h-screen bg-[#F8FAFC]">
+        <div className="flex flex-col items-center gap-4">
+          <MulticaixaLogo size="lg" />
+          <div className="text-center">
+            <h2 className="text-[#004FAC] font-black uppercase text-xl">Flipa ATM</h2>
+            <p className="text-[#004FAC]/40 text-[10px] uppercase mt-2 font-bold tracking-widest">A carregar...</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8F9FB] p-6">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFC] p-6 relative overflow-hidden">
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#004FAC]/5 blur-[100px] rounded-full" />
+        
         <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-blue-100/50 border border-gray-100 text-center"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-md bg-white p-10 rounded-[2.5rem] shadow-2xl border border-blue-50 text-center relative z-10"
         >
-          <div className="flex justify-center mb-8">
+          <div className="flex justify-center mb-10">
             <MulticaixaLogo size="lg" />
           </div>
           
-          <h1 className="text-4xl font-black text-[#002244] mb-3 tracking-tight">Flipa ATM</h1>
-          <p className="text-gray-500 mb-10 text-lg">
-            A sua rede inteligente de caixas automáticos em Angola.
+          <h1 className="text-3xl font-black text-[#004FAC] mb-4">Achar dinheiro nunca foi tão fácil</h1>
+          <p className="text-slate-500 mb-12 text-sm leading-relaxed">
+            A maior rede colaborativa de ATMs em Angola. Veja em tempo real quem tem dinheiro e quem não tem.
           </p>
 
-          <div className="flex flex-col items-center space-y-3">
+          <div className="flex flex-col items-center space-y-4">
             <button
               onClick={signInAsGuest}
               disabled={isSigningIn}
-              className="w-[200px] h-[60px] bg-[#002244] text-white rounded-2xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-900 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full h-16 bg-[#004FAC] text-white rounded-2xl font-black shadow-xl shadow-blue-100 hover:bg-[#003A80] transition-all active:scale-[0.98] disabled:opacity-50"
             >
-              {isSigningIn ? 'Entrando...' : 'Entrar'}
+              {isSigningIn ? 'Entrando...' : 'Entrar como Convidado'}
             </button>
 
             <button
               onClick={signInWithGoogle}
               disabled={isSigningIn}
-              className="w-[200px] h-[60px] flex items-center justify-center gap-3 bg-white border-2 border-gray-100 text-gray-700 rounded-2xl font-bold shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full h-16 flex items-center justify-center gap-3 bg-white border-2 border-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-50 transition-all active:scale-95 disabled:opacity-50"
             >
               <Image 
                 src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
@@ -485,632 +196,357 @@ export default function FlipaATM() {
                 className="w-5 h-5" 
                 referrerPolicy="no-referrer"
               />
-              {isSigningIn ? 'Aguarde...' : 'Google'}
+              {isSigningIn ? 'Aguarde...' : 'Entrar com Google'}
             </button>
           </div>
 
-          <p className="text-xs text-gray-400 mt-6 px-4">
-            Ao entrar, você concorda com os nossos Termos de Serviço e Política de Privacidade.
+          <p className="text-[10px] text-slate-400 mt-8 uppercase tracking-widest font-bold">
+            Flipa ATM • Rede Colaborativa Angolana
           </p>
         </motion.div>
       </div>
     );
   }
 
+  const filteredAtms = atms.filter(atm => {
+    const bName = atm.bankName || '';
+    const lName = atm.locationName || '';
+    const matchesSearch = bName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          lName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFilter = filter === 'todos' || 
+                          (filter === 'disponivel' && atm.status === 'disponivel') ||
+                          (filter === 'sem_dinheiro' && atm.status === 'sem_dinheiro');
+    return matchesSearch && matchesFilter;
+  });
+
   return (
-    <div className="min-h-screen bg-[#F8F9FB] pb-24 font-sans text-gray-900">
-      <script dangerouslySetInnerHTML={{ __html: `
-        window.startCompass = async function() {
-          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try {
-              const permission = await DeviceOrientationEvent.requestPermission();
-              if (permission === 'granted') {
-                window.location.reload(); // Still safest to reload on iOS to propagate permission
-              } else {
-                alert('Permissão de bússola negada. Para ver a sua direção, autorize o acesso aos sensores.');
-              }
-            } catch (e) {
-              console.error(e);
-            }
-          }
-        }
-      `}} />
+    <div className="min-h-screen bg-[#F8FAFC] pb-32 font-sans text-slate-900">
       <IosPwaPrompt />
       <AnimatePresence>
-        {showPermissionPrompt && (
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            className="fixed bottom-24 left-4 right-4 z-[100] bg-white rounded-3xl shadow-2xl border border-blue-100 p-6 flex flex-col gap-4"
-          >
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-100 p-3 rounded-2xl">
-                <Bell className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-gray-900">Ativar Notificações? 🔔</h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  Concorda receber notificações do <span className="font-bold text-blue-900">FLIPA ATM</span> sobre atualizações em tempo real nos caixas de Luanda?
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button 
-                onClick={() => {
-                  localStorage.setItem('flipa_notifications_dismissed_at', Date.now().toString());
-                  setShowPermissionPrompt(false);
-                }}
-                className="flex-1 py-3 text-sm font-bold text-gray-400 hover:bg-gray-50 rounded-xl transition-colors"
-              >
-                Agora não
-              </button>
-              <button 
-                onClick={requestPermission}
-                className="flex-1 py-3 bg-blue-900 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-800 transition-all active:scale-95"
-              >
-                Sim, concordo
-              </button>
-            </div>
-          </motion.div>
-        )}
-
         {showGuestNotice && (
           <motion.div
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -50, opacity: 0 }}
-            className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-6 py-4 text-sm font-medium flex items-center justify-between shadow-lg sticky top-0 z-50"
+            className="bg-[#004FAC] text-white px-6 py-3 text-xs font-bold flex items-center justify-between shadow-lg sticky top-0 z-50"
           >
             <div className="flex items-center gap-3">
-              <div className="bg-white/20 p-1.5 rounded-lg">
-                <Sparkles className="w-4 h-4 text-blue-100" />
-              </div>
-              <p className="leading-tight">
-                <span className="font-bold block">Modo Visitante</span>
-                <span className="text-blue-100 text-xs">Cadastre-se para uma melhor experiência e salvar os seus favoritos!</span>
-              </p>
+              <Sparkles className="w-4 h-4 text-yellow-400" />
+              <p>Crie conta para ganhar reputação ao reportar ATMs!</p>
             </div>
-            <button 
-              onClick={() => setShowGuestNotice(false)}
-              className="p-2 hover:bg-white/10 rounded-xl transition-all active:scale-90"
-            >
-              <AlertCircle className="w-5 h-5 opacity-80" />
+            <button onClick={() => setShowGuestNotice(false)}>
+              <X className="w-4 h-4" />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Header */}
-      <header className="bg-white px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm border-b border-gray-100">
+      <header className="bg-white px-6 py-4 flex items-center justify-between sticky top-0 z-30 border-b border-slate-100">
         <div className="flex items-center gap-3">
           <MulticaixaLogo size="sm" />
-          <h1 className="text-lg font-bold tracking-tight text-blue-900">FLIPA ATM</h1>
+          <h1 className="text-lg font-black tracking-tight text-[#004FAC]">Flipa ATM</h1>
         </div>
-        <div className="flex items-center gap-3">
-          {user.email === 'heltonlisboa937@gmail.com' && (
+        <div className="flex items-center gap-4">
+          {user?.email === 'heltonlisboa937@gmail.com' && (
             <button 
               onClick={() => setShowAdmin(true)}
-              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Administração"
+              className="p-2 text-slate-400 hover:text-[#004FAC] transition-colors"
             >
-              <Settings className="w-4 h-4" />
+              <Lock className="w-5 h-5" />
             </button>
           )}
-          <button onClick={logout} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors">
-            <LogOut className="w-4 h-4" />
+          <button 
+            onClick={() => setShowHelp(true)}
+            className="p-2 text-slate-400 hover:text-[#004FAC] transition-colors"
+          >
+            <HelpCircle className="w-5 h-5" />
           </button>
-          <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-blue-50">
+          <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-blue-50 p-0.5">
             <Image 
               src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} 
               alt="Profile" 
-              width={32} 
-              height={32} 
-              className="w-full h-full object-cover" 
+              width={36} 
+              height={36} 
+              className="w-full h-full object-cover rounded-full" 
               referrerPolicy="no-referrer"
             />
           </div>
         </div>
       </header>
 
-      <main className="p-4 max-w-md mx-auto">
-        <AnimatePresence mode="wait">
-          {view === 'home' && (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              {/* Search Bar */}
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Onde quer levantar?"
+      <main className="p-6 max-w-lg mx-auto space-y-6">
+        {activeTab === 'mapa' && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">Vista de Mapa</h2>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setShowRoute(!showRoute)}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-bold transition-all ${
+                    showRoute ? 'bg-[#004FAC] text-white' : 'bg-white text-slate-400 border border-slate-100'
+                  }`}
+                >
+                  {showRoute ? 'Ocultar Rota' : 'Mostrar Rota'}
+                </button>
+              </div>
+            </div>
+            
+            <MapView 
+              atms={filteredAtms}
+              userLocation={userLocation}
+              userHeading={userHeading}
+              selectedATM={selectedAtm}
+              showRoute={showRoute}
+              onSelectATM={(atm) => {
+                setSelectedAtm(atm);
+                setShowRoute(true);
+              }}
+            />
+
+            {selectedAtm && (
+              <motion.div 
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="bg-white p-4 rounded-3xl border border-blue-50 shadow-xl flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                    <MulticaixaLogo size="sm" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">{selectedAtm.bankName}</h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{selectedAtm.locationName}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedAtm(null)}
+                  className="p-2 text-slate-300 hover:text-slate-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+
+        {(activeTab === 'lista' || activeTab === 'mapa') && (
+          <>
+            {/* Search and Filters */}
+            <section className="space-y-4">
+              <div className="relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-[#004FAC] transition-colors" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por banco ou bairro..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white border-none rounded-xl py-3 pl-12 pr-4 shadow-sm focus:ring-2 focus:ring-blue-500 transition-all outline-none text-sm text-gray-700 placeholder:text-gray-400"
+                  className="w-full bg-white border-none h-14 pr-6 rounded-2xl shadow-sm focus:ring-2 focus:ring-[#004FAC] outline-none text-sm transition-all"
+                  style={{ paddingLeft: '3rem' }}
                 />
               </div>
-
-              {/* Quick Filters */}
-              <div className="grid grid-cols-3 gap-2">
-                <button className="flex flex-col items-center justify-center gap-1 p-1.5 bg-green-50 rounded-xl border border-green-100 group hover:bg-green-100 transition-all">
-                  <div className="w-7 h-7 bg-green-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-green-100 group-hover:scale-110 transition-transform overflow-hidden">
-                    <MulticaixaLogo size="sm" className="scale-50" />
-                  </div>
-                  <span className="text-[7px] font-bold text-green-800 text-center leading-tight">COM DINHEIRO</span>
-                </button>
-                <button className="flex flex-col items-center justify-center gap-1 p-1.5 bg-blue-50 rounded-xl border border-blue-100 group hover:bg-blue-100 transition-all">
-                  <div className="w-7 h-7 bg-blue-500 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-100 group-hover:scale-110 transition-transform">
-                    <FileText className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="text-[7px] font-bold text-blue-800 text-center leading-tight">COM PAPEL</span>
-                </button>
-                <button 
-                  onClick={() => {
-                    setSearchQuery('');
-                    const listElement = document.getElementById('atm-list-section');
-                    if (listElement) listElement.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="flex flex-col items-center justify-center gap-1 p-1.5 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-gray-100 transition-all"
-                >
-                  <div className="w-7 h-7 bg-gray-700 rounded-lg flex items-center justify-center text-white shadow-lg shadow-gray-100 group-hover:scale-110 transition-transform">
-                    <Navigation className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="text-[7px] font-bold text-gray-800 text-center leading-tight">TODOS PRÓXIMOS</span>
-                </button>
+              
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                {[
+                  { id: 'todos', label: 'Todos' },
+                  { id: 'disponivel', label: 'Com Dinheiro' },
+                  { id: 'sem_dinheiro', label: 'Sem Dinheiro' }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id as any)}
+                    className={`whitespace-nowrap px-6 py-3 rounded-xl text-xs font-bold transition-all ${
+                      filter === f.id ? 'bg-[#004FAC] text-white shadow-lg shadow-blue-100' : 'bg-white text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
+            </section>
 
-              {/* ATM List */}
-              <section id="atm-list-section">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ATMs Próximos</h2>
-                  <button className="text-[10px] font-bold text-blue-600 uppercase">Ver Todos</button>
+            {/* ATM List */}
+            {activeTab === 'lista' && (
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">ATMs na proximidade</h2>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">{filteredAtms.length} Resultados</span>
                 </div>
-                <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
-                  {filteredATMs.length > 0 ? (
-                    filteredATMs.map((atm) => {
-                      const distance = userLocation 
-                        ? getDistance(userLocation[0], userLocation[1], atm.latitude, atm.longitude)
-                        : null;
-                      
-                      return (
-                        <motion.div
-                          key={atm.id}
-                          whileHover={{ scale: 1.01 }}
-                          whileTap={{ scale: 0.99 }}
-                          onClick={() => { setSelectedATM(atm); setView('details'); }}
-                          className="bg-white p-3 rounded-xl shadow-sm border border-gray-50 flex items-center gap-3 cursor-pointer"
-                        >
-                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-blue-900 font-bold text-[9px]">
-                            {atm.bankName.substring(0, 3).toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <h3 className="font-bold text-xs text-gray-900 truncate">{atm.bankName} {atm.locationName}</h3>
-                              {distance !== null && (
-                                <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                                  {distance < 1000 
-                                    ? `${Math.round(distance)}m` 
-                                    : `${(distance / 1000).toFixed(1)}km`}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[9px] text-gray-400 truncate">{atm.address || 'Localização central'}</p>
-                          </div>
-                          <StatusBadge status={atm.status} />
-                        </motion.div>
-                      );
-                    })
+
+                <div className="space-y-3">
+                  {filteredAtms.length > 0 ? (
+                    filteredAtms.map(atm => (
+                      <ATMCard 
+                        key={atm.id} 
+                        atm={atm} 
+                        onNavigate={() => {
+                          setSelectedAtm(atm);
+                          setActiveTab('mapa');
+                          setShowRoute(true);
+                        }} 
+                      />
+                    ))
                   ) : (
-                    <div className="text-center py-12 text-gray-400">
-                      <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                      <p>Nenhum ATM encontrado.</p>
+                    <div className="bg-white p-12 rounded-[2.5rem] text-center space-y-4 border border-slate-50 shadow-sm">
+                      <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
+                        <Search className="w-8 h-8 text-slate-200" />
+                      </div>
+                      <p className="text-slate-400 text-sm font-medium">Nenhum ATM encontrado.</p>
                     </div>
                   )}
                 </div>
               </section>
+            )}
+          </>
+        )}
 
-              {/* Map Preview or Real Map */}
-              {!showWelcome && !showAdmin && (activeTab === 'list' ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Mapa Interativo</h2>
-                    <button 
-                      onClick={() => setActiveTab('map')}
-                      className="text-xs font-bold text-blue-600 uppercase flex items-center gap-1"
-                    >
-                      Expandir <ChevronRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <div className="relative group">
-                    <MapView 
-                      height="h-64"
-                      atms={filteredATMs} 
-                      onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
-                      userLocation={userLocation}
-                      userHeading={userHeading}
-                      selectedATM={selectedATM}
-                      showRoute={user && !user.isAnonymous}
-                    />
-                    <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
-                      {typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function' && !userHeading && (
-                        <button 
-                          onClick={() => (window as any).startCompass()}
-                          className="bg-orange-500 text-white p-3 rounded-2xl shadow-lg border border-orange-400 flex items-center gap-2 text-xs font-black animate-bounce"
-                        >
-                          <Sparkles className="w-5 h-5" />
-                          ATIVAR BÚSSOLA
-                        </button>
-                      )}
-                      <div className="bg-white/90 backdrop-blur p-2 rounded-xl shadow-lg border border-blue-100">
-                        <MapPin className="w-5 h-5 text-blue-600" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Mapa de ATMs</h2>
-                    <button 
-                      onClick={() => setActiveTab('list')}
-                      className="text-xs font-bold text-blue-600 uppercase"
-                    >
-                      Voltar para Lista
-                    </button>
-                  </div>
-                  {!showAdmin && (
-                    <MapView 
-                      atms={filteredATMs} 
-                      onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }}
-                      userLocation={userLocation}
-                      userHeading={userHeading}
-                      selectedATM={selectedATM}
-                      showRoute={user && !user.isAnonymous}
-                    />
-                  )}
-                </div>
-              ))}
-
-              {/* Seed Button (Temporary for testing) */}
-              {user.email === 'heltonlisboa937@gmail.com' && atms.length === 0 && (
-                <button 
-                  onClick={async () => {
-                    const { seedATMs } = await import('@/seed');
-                    await seedATMs();
-                  }}
-                  className="w-full p-4 bg-yellow-100 text-yellow-800 rounded-2xl font-bold text-xs uppercase tracking-widest"
-                >
-                  Carregar Dados Iniciais (Seed)
-                </button>
-              )}
-            </motion.div>
-          )}
-
-          {view === 'details' && selectedATM && (
-            <motion.div
-              key="details"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              <button 
-                onClick={() => setView('home')}
-                className="flex items-center gap-2 text-gray-500 text-sm font-medium hover:text-blue-600 transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 rotate-180" />
-                Voltar
-              </button>
-
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-50 space-y-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">{selectedATM.bankName} - {selectedATM.locationName}</h2>
-                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                      <MapPin className="w-3.5 h-3.5" />
-                      {selectedATM.address || 'Luanda, Angola'}
-                    </p>
-                  </div>
-                  <div className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-[9px] font-bold">ONLINE</div>
-                </div>
-
-                <div 
-                  className={`rounded-2xl flex flex-col items-center justify-center border-2 transition-all duration-500 shadow-lg mx-auto w-full max-w-[260px] aspect-[4/3] p-4 ${
-                  selectedATM.status === 'disponivel' ? 'bg-green-50/50 border-green-200 shadow-green-100/50' :
-                  selectedATM.status === 'sem_papel' ? 'bg-orange-50/50 border-orange-200 shadow-orange-100/50' :
-                  'bg-gray-50/50 border-gray-200 shadow-gray-100/50'
-                }`}>
-                  <div 
-                    className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl animate-pulse ${
-                    selectedATM.status === 'disponivel' ? 'bg-green-500' :
-                    selectedATM.status === 'sem_papel' ? 'bg-orange-500' :
-                    'bg-gray-500'
-                  }`} />
-                  
-                  <div 
-                    className={`flex items-center justify-center gap-2 text-[10px] font-medium mt-4 ${
-                    selectedATM.status === 'disponivel' ? 'text-green-600/70' :
-                    selectedATM.status === 'sem_papel' ? 'text-orange-600/70' :
-                    'text-gray-600/70'
-                  }`}>
-                    <Clock className="w-4 h-4" />
-                    Atualizado {safeFormatDistanceToNow(selectedATM.lastReportedAt)}
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-50 space-y-3">
-                  <div className="flex items-center gap-2 text-blue-600">
-                    <Sparkles className="w-4 h-4" />
-                    <span className="text-[9px] font-black uppercase tracking-widest">Flipa AI Insights</span>
-                  </div>
-                  <p className="text-[11px] text-gray-600 italic leading-relaxed">
-                    {aiInsight}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 p-3 rounded-xl flex items-center gap-2">
-                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm overflow-hidden">
-                      <MulticaixaLogo size="sm" className="scale-50" />
-                    </div>
-                    <div>
-                      <span className="text-[9px] font-bold text-gray-400 uppercase">Notas</span>
-                      <p className="text-xs font-bold text-gray-700">2000, 5000</p>
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 p-3 rounded-xl flex items-center gap-2">
-                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                      <Clock className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <div>
-                      <span className="text-[9px] font-bold text-gray-400 uppercase">Espera</span>
-                      <p className="text-xs font-bold text-gray-700">~10 min</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Community Help Section */}
-              <div className="bg-white border border-gray-100 rounded-[2rem] p-6 shadow-xl shadow-blue-900/5 space-y-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full -mr-12 -mt-12 opacity-50" />
-                
-                <div className="space-y-2 relative z-10">
-                  <h3 className="text-lg font-black text-gray-900 tracking-tight">Ajude a comunidade!</h3>
-                  <p className="text-xs text-gray-500 leading-relaxed font-medium">
-                    A sua informação é preciosa. Ajude milhares de pessoas a pouparem tempo e combustível em Luanda.
-                  </p>
-                </div>
-
-                <div className="space-y-3 relative z-10 flex flex-col items-center">
-                  {userLocation && selectedATM && getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude) > 30 && (
-                    <div className="w-full bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center gap-3 text-amber-800 mb-2">
-                      <Lock className="w-5 h-5 flex-shrink-0" />
-                      <p className="text-[10px] font-medium leading-tight text-center">
-                        Opção Bloqueada. Precisas de estar a menos de 30 metros deste ATM para ajudar a comunidade. 
-                        Estás a {Math.round(getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude))}m.
-                      </p>
-                    </div>
-                  )}
-                  <button 
-                    disabled={isReporting || !!(userLocation && selectedATM && getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude) > 30)}
-                    onClick={() => handleReport('disponivel')}
-                    style={{ height: '57px', width: '254px' }}
-                    className="bg-green-600 text-white p-4 rounded-2xl font-black flex items-center justify-between hover:bg-green-700 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale shadow-lg shadow-green-200 group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
-                        <ThumbsUp className="w-5 h-5" />
-                      </div>
-                      <div className="text-left">
-                        <span className="block text-[9px] opacity-70 uppercase tracking-widest">Confirmar</span>
-                        <span className="text-base">Tem Dinheiro 👍</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 opacity-50" />
-                  </button>
-                  <button 
-                    disabled={isReporting || !!(userLocation && selectedATM && getDistance(userLocation[0], userLocation[1], selectedATM.latitude, selectedATM.longitude) > 30)}
-                    onClick={() => handleReport('sem_dinheiro')}
-                    style={{ height: '61px', width: '252px' }}
-                    className="bg-gray-600 text-white p-4 rounded-2xl font-black flex items-center justify-between hover:bg-gray-700 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale shadow-lg shadow-gray-200 group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform">
-                        <ThumbsDown className="w-5 h-5" />
-                      </div>
-                      <div className="text-left">
-                        <span className="block text-[9px] opacity-70 uppercase tracking-widest">Confirmar</span>
-                        <span className="text-base">Sem Dinheiro 👎</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 opacity-50" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Map Location */}
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-50 space-y-4">
-                <div className="flex items-center gap-2 font-bold text-gray-900">
-                  <MapPin className="w-5 h-5 text-blue-600" />
-                  Localização exata
-                </div>
-                <div className="relative group">
-                  <MapView 
-                    height="h-64"
-                    atms={[selectedATM]} 
-                    onSelectATM={() => {}}
-                    userLocation={userLocation}
-                    userHeading={userHeading}
-                    selectedATM={selectedATM}
-                    showRoute={user && !user.isAnonymous}
-                  />
-                  <div className="absolute top-4 right-4 z-[400] flex flex-col gap-2">
-                    {typeof window !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function' && !userHeading && (
-                      <button 
-                        onClick={async () => {
-                          try {
-                            const permission = await (DeviceOrientationEvent as any).requestPermission();
-                            if (permission === 'granted') {
-                              window.location.reload(); // Reload to activate listeners
-                            }
-                          } catch (e) {
-                            console.error(e);
-                          }
-                        }}
-                        className="bg-orange-500 text-white p-2 rounded-xl shadow-lg border border-orange-400 flex items-center gap-2 text-[10px] font-bold animate-bounce"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        ATIVAR BÚSSOLA
-                      </button>
-                    )}
-                    <button 
-                      onClick={async () => {
-                        // Request iOS orientation permission if available
-                        if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-                          try {
-                            const permission = await (DeviceOrientationEvent as any).requestPermission();
-                            if (permission === 'granted') {
-                              console.log('Orientation permission granted');
-                            }
-                          } catch (e) {
-                            console.error('Orientation permission error:', e);
-                          }
-                        }
-
-                        if (navigator.geolocation) {
-                          navigator.geolocation.getCurrentPosition((pos) => {
-                            setUserLocation([pos.coords.latitude, pos.coords.longitude]);
-                          });
-                        }
-                      }}
-                      className="bg-white/90 backdrop-blur p-2 rounded-xl shadow-lg border border-blue-100 text-blue-600 hover:bg-blue-50 transition-colors"
-                    >
-                      <Navigation className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {view === 'report' && (
-            <motion.div
-              key="report"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
+        {activeTab === 'lista' && (
+          /* Level Up Stats */
+          <section className="bg-gradient-to-br from-[#004FAC] to-[#003A80] rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden text-white">
+            <div className="relative z-10 flex items-center justify-between">
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-gray-900">Relatar Estado</h2>
-                <p className="text-gray-500 text-sm">Selecione um ATM próximo para informar a comunidade.</p>
+                <h3 className="text-sm font-black uppercase tracking-widest text-blue-200">A sua Reputação</h3>
+                <p className="text-2xl font-black">{userReputation} XP</p>
               </div>
-
-              <div className="space-y-4">
-                {atms.length > 0 ? (
-                  atms.map((atm) => (
-                    <div 
-                      key={atm.id}
-                      className="bg-white p-6 rounded-3xl shadow-sm border border-gray-50 space-y-4"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-bold text-gray-900">{atm.bankName} - {atm.locationName}</h3>
-                          <p className="text-xs text-gray-400">{atm.address || 'Luanda'}</p>
-                        </div>
-                        <StatusBadge status={atm.status} />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <button 
-                          disabled={isReporting}
-                          onClick={async () => { setSelectedATM(atm); await handleReport('disponivel'); }}
-                          className="bg-green-50 text-green-700 p-4 rounded-2xl flex items-center justify-center hover:bg-green-100 transition-all active:scale-95 disabled:opacity-50 border border-green-100"
-                        >
-                          <div className="w-4 h-4 rounded-full bg-green-500 shadow-sm shadow-green-200" />
-                        </button>
-                        <button 
-                          disabled={isReporting}
-                          onClick={async () => { setSelectedATM(atm); await handleReport('sem_dinheiro'); }}
-                          className="bg-gray-50 text-gray-700 p-4 rounded-2xl flex items-center justify-center hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 border border-gray-100"
-                        >
-                          <div className="w-4 h-4 rounded-full bg-gray-500 shadow-sm shadow-gray-200" />
-                        </button>
-                        <button 
-                          disabled={isReporting}
-                          onClick={async () => { setSelectedATM(atm); await handleReport('sem_papel'); }}
-                          className="bg-orange-50 text-orange-700 p-4 rounded-2xl flex items-center justify-center hover:bg-orange-100 transition-all active:scale-95 disabled:opacity-50 border border-orange-100"
-                        >
-                          <div className="w-4 h-4 rounded-full bg-orange-500 shadow-sm shadow-orange-200" />
-                        </button>
-                        <button 
-                          disabled={isReporting}
-                          onClick={async () => { setSelectedATM(atm); await handleReport('fora_de_servico'); }}
-                          className="bg-gray-50 text-gray-700 p-4 rounded-2xl flex items-center justify-center hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 border border-gray-100"
-                        >
-                          <div className="w-4 h-4 rounded-full bg-gray-500 shadow-sm shadow-gray-200" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-12 text-gray-400">
-                    <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                    <p>Nenhum ATM disponível para relatar.</p>
-                  </div>
-                )}
+              <div className="p-4 bg-white/10 backdrop-blur-md rounded-2xl">
+                <Award className="w-8 h-8 text-yellow-400" />
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+            <div className="mt-6 w-full bg-white/10 h-2 rounded-full overflow-hidden">
+              <div className="h-full bg-yellow-400 w-[60%] shadow-[0_0_15px_rgba(250,204,21,0.5)]" />
+            </div>
+            <p className="mt-4 text-[10px] font-bold text-blue-100 uppercase tracking-widest">Continue reportando para subir de nível!</p>
+          </section>
+        )}
+
+        {activeTab === 'ajuda' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-black text-[#004FAC]">Ajuda & Suporte</h2>
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 space-y-4">
+              <p className="text-sm text-slate-600">A maior rede colaborativa de Luanda. Como podemos ajudar?</p>
+              <button 
+                onClick={() => setShowHelp(true)}
+                className="w-full py-4 bg-slate-50 text-[#004FAC] rounded-2xl font-bold text-sm"
+              >
+                Ver Tutorial Completo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'perfil' && (
+          <div className="space-y-6">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 text-center space-y-4">
+              <div className="w-24 h-24 rounded-full mx-auto border-4 border-blue-50 p-1">
+                <Image 
+                  src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} 
+                  alt="Profile" 
+                  width={96} 
+                  height={96} 
+                  className="w-full h-full object-cover rounded-full" 
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900">{user.displayName || 'Utilizador Flipa'}</h2>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{user.email || 'Conta de Convidado'}</p>
+              </div>
+              <div className="pt-4 border-t border-slate-50">
+                <button 
+                  onClick={logout}
+                  className="flex items-center justify-center gap-2 w-full py-4 text-red-500 font-bold text-sm hover:bg-red-50 rounded-2xl transition-all"
+                >
+                  <LogOut className="w-5 h-5" />
+                  Terminar Sessão
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t border-gray-100 px-8 py-4 flex items-center justify-between z-40">
-        <button 
-          onClick={() => { setView('home'); setActiveTab('map'); }}
-          className={`flex flex-col items-center gap-1 transition-colors ${view === 'home' && activeTab === 'map' ? 'text-blue-600' : 'text-gray-400'}`}
-        >
-          <div className={`p-2 rounded-xl ${view === 'home' && activeTab === 'map' ? 'bg-blue-50' : ''}`}>
-            <MapPin className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest">Mapa</span>
-        </button>
-        <button 
-          onClick={() => { setView('home'); setActiveTab('list'); }}
-          className={`flex flex-col items-center gap-1 transition-colors ${view === 'home' && activeTab === 'list' ? 'text-blue-600' : 'text-gray-400'}`}
-        >
-          <div className={`p-2 rounded-xl ${view === 'home' && activeTab === 'list' ? 'bg-blue-50' : ''}`}>
-            <PlusCircle className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest">Lista</span>
-        </button>
-        <button 
-          onClick={() => setView('report')}
-          className={`flex flex-col items-center gap-1 transition-colors ${view === 'report' ? 'text-blue-600' : 'text-gray-400'}`}
-        >
-          <div className={`p-2 rounded-xl ${view === 'report' ? 'bg-blue-50' : ''}`}>
-            <AlertCircle className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest">Relatar</span>
-        </button>
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-2xl border-t border-slate-100 px-8 py-5 flex items-center justify-between z-40">
+        <NavItem active={activeTab === 'mapa'} label="Mapa" icon={<MapPin className="w-6 h-6" />} onClick={() => setActiveTab('mapa')} />
+        <NavItem active={activeTab === 'lista'} label="Lista" icon={<PlusCircle className="w-6 h-6" />} onClick={() => setActiveTab('lista')} />
+        <div className="h-10 w-[1px] bg-slate-100" />
+        <NavItem active={activeTab === 'ajuda'} label="Ajuda" icon={<HelpCircle className="w-6 h-6" />} onClick={() => setActiveTab('ajuda')} />
+        <NavItem active={activeTab === 'perfil'} label="Perfil" icon={<Settings className="w-6 h-6" />} onClick={() => setActiveTab('perfil')} />
       </nav>
 
-      <AIAssistant atms={atms} onSelectATM={(atm) => { setSelectedATM(atm); setView('details'); }} />
-
-      {/* Admin Panel Overlay */}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-
+      
       <WelcomeModal 
         isOpen={showWelcome} 
         onClose={handleCloseWelcome} 
-        userName={user.displayName || 'Utilizador'} 
+        userName={user.displayName || 'Estimado Utilizador'} 
+      />
+
+      <HelpModal 
+        isOpen={showHelp} 
+        onClose={() => setShowHelp(false)} 
       />
     </div>
   );
 }
+
+function NavItem({ active, label, icon, onClick }: { active: boolean, label: string, icon: React.ReactNode, onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1.5 transition-all ${active ? 'text-[#004FAC] scale-110' : 'text-slate-300'}`}>
+      {icon}
+      <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
+      {active && <motion.div layoutId="nav-dot" className="w-1 h-1 bg-[#004FAC] rounded-full" />}
+    </button>
+  );
+}
+
+function ATMCard({ atm, onNavigate }: { atm: ATM, onNavigate?: () => void }) {
+  const statusLabels = {
+    disponivel: 'Tem Dinheiro',
+    sem_dinheiro: 'Sem Dinheiro',
+    sem_papel: 'Apenas Papel',
+    fora_de_servico: 'Fora do Ar'
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-50 flex items-center gap-5 group hover:shadow-xl hover:shadow-blue-900/5 transition-all"
+    >
+      <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center shrink-0 border border-slate-100">
+        <MulticaixaLogo size="sm" />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <h3 className="font-bold text-slate-900 text-sm truncate">{atm.bankName}</h3>
+        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider truncate mb-2">{atm.locationName}</p>
+        
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${
+              atm.status === 'disponivel' ? 'bg-green-500' : 
+              atm.status === 'sem_dinheiro' ? 'bg-red-500' : 'bg-slate-300'
+            }`} />
+            <span className="text-[10px] font-bold text-slate-500">{statusLabels[atm.status]}</span>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-50 rounded-lg">
+            <Clock className="w-3 h-3 text-slate-300" />
+            <span className="text-[9px] font-bold text-slate-400">Perto de si</span>
+          </div>
+        </div>
+      </div>
+
+      <button 
+        onClick={onNavigate}
+        className="w-10 h-10 rounded-2xl bg-blue-50 text-[#004FAC] flex items-center justify-center group-hover:bg-[#004FAC] group-hover:text-white transition-all scale-90 group-hover:scale-100 shadow-lg shadow-blue-900/5"
+      >
+        <Navigation className="w-5 h-5" />
+      </button>
+    </motion.div>
+  );
+}
+

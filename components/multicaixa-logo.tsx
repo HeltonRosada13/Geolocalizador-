@@ -17,35 +17,22 @@ export const MulticaixaLogo: React.FC<MulticaixaLogoProps> = ({ size = 'md', cla
   const { width, height } = dimensions[size];
 
   return (
-    <div className={`flex flex-col items-center justify-center ${className}`}>
+    <div className={`relative ${className}`} style={{ width, height }}>
       <svg
         width={width}
         height={height}
         viewBox="0 0 100 100"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="drop-shadow-sm"
       >
-        {/* Background rounded square */}
-        <rect width="100" height="100" rx="20" fill="#002244" />
-        
-        {/* Stylized 'M' shape - Orange part */}
+        <rect width="100" height="100" rx="20" fill="#004FAC" />
         <path
-          d="M25 75V35L50 55L75 35V75"
-          stroke="#F58220"
-          strokeWidth="12"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          d="M20 30H80V40H20V30ZM20 45H80V55H20V45ZM20 60H80V70H20V60Z"
+          fill="white"
         />
-        
-        {/* Accent dot or line to make it look more like the real logo */}
-        <circle cx="50" cy="30" r="6" fill="#F58220" />
+        <circle cx="80" cy="80" r="10" fill="#FACC15" />
       </svg>
-      {size === 'lg' && (
-        <span className="mt-2 text-[#002244] font-black text-sm tracking-tighter uppercase">
-          Multicaixa
-        </span>
-      )}
     </div>
   );
 };
+

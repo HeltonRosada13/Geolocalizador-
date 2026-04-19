@@ -3,7 +3,7 @@
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { ATM } from '@/app/page';
+import { ATM } from '@/lib/types';
 import { useEffect, useState, useMemo } from 'react';
 import { Clock, Navigation } from 'lucide-react';
 

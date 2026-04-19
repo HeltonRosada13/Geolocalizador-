@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ATM } from '@/app/page';
+import { ATM } from '@/lib/types';
 import { getMessagingInstance, db } from '@/lib/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { safeStorage } from '@/lib/safe-storage';
 
 export function useNotifications(atms: ATM[], userLocation: [number, number] | null, user: any) {
   const prevAtmsRef = useRef<ATM[]>([]);
@@ -68,7 +69,7 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
     if (typeof window !== 'undefined' && 'Notification' in window) {
       const checkPermission = () => {
         if (Notification.permission === 'default') {
-          const dismissedAt = localStorage.getItem('flipa_notifications_dismissed_at');
+          const dismissedAt = safeStorage.getItem('flipa_notifications_dismissed_at');
           if (!dismissedAt) {
             setShowPermissionPrompt(true);
           } else {
@@ -103,7 +104,7 @@ export function useNotifications(atms: ATM[], userLocation: [number, number] | n
         const permission = await Notification.requestPermission();
         // If they made a choice (granted or denied), we stop the 2-minute cycle
         if (permission !== 'default') {
-          localStorage.removeItem('flipa_notifications_dismissed_at');
+          safeStorage.removeItem('flipa_notifications_dismissed_at');
         }
         setShowPermissionPrompt(false);
         

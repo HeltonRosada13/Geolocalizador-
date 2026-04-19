@@ -3,11 +3,14 @@
 import { useState, useEffect } from 'react';
 import { Share, PlusSquare, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { safeStorage } from '@/lib/safe-storage';
 
 export function IosPwaPrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     // Detect if device is iOS
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     
@@ -15,7 +18,7 @@ export function IosPwaPrompt() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
 
     if (isIos && !isStandalone) {
-      const hasDismissed = localStorage.getItem('ios_pwa_prompt_dismissed');
+      const hasDismissed = safeStorage.getItem('ios_pwa_prompt_dismissed');
       if (!hasDismissed) {
         setShowPrompt(true);
       }
@@ -23,7 +26,7 @@ export function IosPwaPrompt() {
   }, []);
 
   const dismissPrompt = () => {
-    localStorage.setItem('ios_pwa_prompt_dismissed', 'true');
+    safeStorage.setItem('ios_pwa_prompt_dismissed', 'true');
     setShowPrompt(false);
   };
 

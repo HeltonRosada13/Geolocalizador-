@@ -20,7 +20,7 @@ import {
   AlertCircle,
   Search
 } from 'lucide-react';
-import { ATM } from '@/app/page';
+import { ATM } from '@/lib/types';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -28,7 +28,6 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [atms, setAtms] = useState<ATM[]>([]);
-  const [reportsCount, setReportsCount] = useState(0);
   const [usersCount, setUsersCount] = useState(0);
   const [activeUsersCount, setActiveUsersCount] = useState(0);
   const [topSearches, setTopSearches] = useState<{query: string, count: number}[]>([]);
@@ -58,8 +57,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     // Fetch Stats
     const fetchStats = async () => {
       try {
-        const reportsSnap = await getDocs(collection(db, 'reports'));
-        setReportsCount(reportsSnap.size);
         const usersSnap = await getDocs(collection(db, 'users'));
         setUsersCount(usersSnap.size);
       } catch (error) {
@@ -160,19 +157,12 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       // 1. Delete the ATM document
       batch.delete(doc(db, 'atms', id));
       
-      // 2. Find and delete all associated reports
-      const reportsQuery = query(collection(db, 'reports'), where('atmId', '==', id));
-      const reportsSnap = await getDocs(reportsQuery);
-      reportsSnap.forEach((reportDoc) => {
-        batch.delete(reportDoc.ref);
-      });
-      
-      // 3. Commit the batch
+      // 2. Commit the batch
       await batch.commit();
       
-      console.log("ATM and associated reports deleted successfully:", id);
+      console.log("ATM deleted successfully:", id);
       setAtmToDelete(null);
-      setStatusMessage({ text: 'ATM e relatos eliminados com sucesso!', type: 'success' });
+      setStatusMessage({ text: 'ATM eliminado com sucesso!', type: 'success' });
       setTimeout(() => setStatusMessage(null), 3000);
     } catch (error) {
       console.error("Error deleting ATM and reports:", error);
@@ -216,20 +206,13 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
       <div className="max-w-5xl mx-auto p-6 space-y-8">
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
             <div className="flex items-center gap-3 mb-2">
               <CreditCardIcon className="w-5 h-5 text-blue-600" />
               <span className="text-xs font-bold text-blue-800 uppercase">Total ATMs</span>
             </div>
             <p className="text-3xl font-black text-blue-900">{atms.length}</p>
-          </div>
-          <div className="bg-green-50 p-6 rounded-3xl border border-green-100">
-            <div className="flex items-center gap-3 mb-2">
-              <Activity className="w-5 h-5 text-green-600" />
-              <span className="text-xs font-bold text-green-800 uppercase">Relatos Totais</span>
-            </div>
-            <p className="text-3xl font-black text-green-900">{reportsCount}</p>
           </div>
           <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100">
             <div className="flex items-center gap-3 mb-2">
